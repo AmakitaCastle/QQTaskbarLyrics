@@ -376,23 +376,29 @@ class TaskbarLyricsWindow:
         self.root.bind("<FocusOut>",lambda e:self._restore_topmost())
 
     def _show_menu(self, event):
-        """弹出右键菜单，若底部空间不够则上移"""
+        """弹出右键菜单，显示在歌词窗口上方"""
         import ctypes
         try:
             spi = ctypes.windll.user32.SystemParametersInfoW
             work_area = ctypes.c_int * 4
             wa = work_area()
             spi(0x0030, 0, wa, 0)
+            screen_top = wa[1]
             screen_bottom = wa[3]
         except:
+            screen_top = 0
             screen_bottom = self.root.winfo_screenheight()
 
-        # 用 Tkinter 请求的高度（准确值）
         menu_h = self.menu.winfo_reqheight()
+        win_x = self.root.winfo_rootx()
+        win_y = self.root.winfo_rooty()
 
-        x, y = event.x_root, event.y_root
-        if y + menu_h > screen_bottom:
-            y = screen_bottom - menu_h
+        # 菜单贴在歌词窗口上方，底部对齐到窗口顶部
+        x = win_x
+        y = win_y - menu_h
+        if y < screen_top:
+            y = win_y  # 上方放不下，显示在窗口下方
+
         self.menu.post(x, y)
 
     # ---- 窗口保护 ----
