@@ -12,6 +12,35 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
+# 日志同时输出到文件和控制台（解决后台线程 print 丢失问题）
+import os, threading, datetime
+_log_lock = threading.Lock()
+_log_file = None
+
+def _init_log():
+    global _log_file
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taskbar_lyrics.log')
+    _log_file = open(path, 'w', encoding='utf-8')
+    # 同时初始化 lyrics_api 的日志
+    try:
+        from lyrics_api import _init_lyrics_log
+        _init_lyrics_log()
+    except: pass
+
+def log(msg):
+    ts = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    line = f"[{ts}] {msg}"
+    # 终端输出
+    try: print(line, flush=True)
+    except: pass
+    # 文件输出
+    with _log_lock:
+        if _log_file:
+            try:
+                _log_file.write(line + '\n')
+                _log_file.flush()
+            except: pass
+
 import asyncio, ctypes, json, re, threading, time, bisect
 import tkinter as tk
 from tkinter import font as tkfont
@@ -99,7 +128,7 @@ class LyricsManager:
         for n in [f"{artist} - {title}.lrc",f"{title}.lrc",f"{ca} - {ct}.lrc",f"{ct}.lrc"]:
             p = self.local_dir / n
             if p.exists():
-                try: return [(t,x,"") for t,x in self._parse_lrc(p.read_text(encoding="utf-8"))]
+                try: return [(t,x,"",[]) for t,x in self._parse_lrc(p.read_text(encoding="utf-8"))]
                 except: pass
         return None
 
@@ -124,26 +153,24 @@ class LyricsManager:
             from lyrics_api import LyricsProvider
             provider = LyricsProvider()
 
-            # 尝试获取带翻译的歌词
             lyrics = provider.get_lyrics(title, artist, album)
             if lyrics:
-                # 转换为统一格式 (time_ms, text, translation)
                 result = []
                 for item in lyrics:
                     if len(item) >= 4:
                         # 格式: (time_ms, text, translation, word_timings)
-                        time_ms, text, trans, _ = item
-                        result.append((time_ms, text, trans))
+                        time_ms, text, trans, word_timings = item
+                        result.append((time_ms, text, trans, word_timings))
                     elif len(item) == 3:
-                        # 格式: (time_ms, text, word_timings)
-                        result.append((item[0], item[1], ""))
+                        # 格式: (time_ms, text, word_timings) — 纯逐字无翻译
+                        result.append((item[0], item[1], "", item[2]))
                     else:
-                        result.append((item[0], item[1], ""))
+                        result.append((item[0], item[1], "", []))
                 return result
-            
+
             return None
         except Exception as e:
-            print(f"    [LDDC API] 失败: {e}")
+            log(f"    [LDDC API] 失败: {e}")
             return None
 
     def load_async(self, title, artist, cb, album=""):
@@ -152,23 +179,55 @@ class LyricsManager:
         if self._loading_key==key: return
         self._loading_key=key
         def w():
-            print(f"\n[Lyrics] {artist} - {title}" + (f" ({album})" if album else ""))
+            log(f"\n[Lyrics] {artist} - {title}" + (f" ({album})" if album else ""))
             ly=self._try_local(title,artist) or self._fetch_online(title,artist,album) or []
             self._cache[key]=ly; self._loading_key=""
-            print(f"[Lyrics] {len(ly)} 行\n"); cb(ly)
+            log(f"[Lyrics] {len(ly)} 行"); cb(ly)
         threading.Thread(target=w,daemon=True).start()
 
     def get_current_line(self, lyrics, position_ms):
-        """返回 (原文, 翻译, progress 0.0~1.0)"""
+        """返回 (原文, 翻译, progress 0.0~1.0)
+        如果有逐字时间(word_timings)，用逐字精度计算 progress。
+        否则退化为行间插值。
+        """
         if not lyrics: return ("♪ 暂无歌词 ♪","",0.0)
         idx=-1
         for i,item in enumerate(lyrics):
             if item[0]<=position_ms: idx=i
             else: break
         if idx<0: return (lyrics[0][1], lyrics[0][2] if len(lyrics[0])>2 else "", 0.0)
-        orig=lyrics[idx][1]; trans=lyrics[idx][2] if len(lyrics[idx])>2 else ""
-        t0=lyrics[idx][0]; t1=lyrics[idx+1][0] if idx+1<len(lyrics) else t0+5000
-        d=t1-t0; progress=max(0.0,min(1.0,(position_ms-t0)/d)) if d>0 else 1.0
+        item = lyrics[idx]
+        orig = item[1]
+        trans = item[2] if len(item)>2 else ""
+        # 检查是否有逐字时间戳 (word_timings 在第4个元素，索引3)
+        word_timings = item[3] if len(item)>3 else []
+        if word_timings:
+            # 用逐字时间计算 progress
+            line_start = item[0]  # 行起始时间(毫秒)
+            # word_timings: [(char_offset_ms, char_duration_ms, char), ...]
+            abs_position = position_ms - line_start  # 在当前行内的绝对位置
+            if abs_position < 0:
+                progress = 0.0
+            else:
+                # 计算已经唱了多少个字符的总时长
+                elapsed_chars = 0
+                total_chars = len(word_timings)
+                for char_offset, char_dur, _ in word_timings:
+                    char_end = char_offset + char_dur
+                    if abs_position >= char_end:
+                        elapsed_chars += 1
+                    elif abs_position > char_offset:
+                        # 在当前字符内
+                        elapsed_chars += (abs_position - char_offset) / char_dur
+                        break
+                    else:
+                        break
+                progress = elapsed_chars / total_chars if total_chars > 0 else 0.0
+            progress = max(0.0, min(1.0, progress))
+        else:
+            # 退化为行间插值
+            t0=lyrics[idx][0]; t1=lyrics[idx+1][0] if idx+1<len(lyrics) else t0+5000
+            d=t1-t0; progress=max(0.0,min(1.0,(position_ms-t0)/d)) if d>0 else 1.0
         return (orig,trans,progress)
 
 
@@ -232,6 +291,7 @@ class TaskbarLyricsWindow:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="鼠标穿透 开/关", command=self._toggle_ct)
         self.menu.add_separator()
+        self.menu.add_command(label="调试信息 开/关", command=self._toggle_debug)
         self.menu.add_command(label="歌词偏移 设置", command=self._offset_cfg)
         self.menu.add_command(label="颜色设置", command=self._color_cfg)
         self.menu.add_command(label="字体设置", command=self._font_cfg)
@@ -239,7 +299,14 @@ class TaskbarLyricsWindow:
         self.menu.add_command(label="退出", command=self._quit)
         self.root.bind("<Button-3>", lambda e: self.menu.post(e.x_root,e.y_root))
         self._ct=False
+        self._debug_mode = False
+        self._debug_label = None
         self._lyric_offset_ms = self._config.get("lyric_offset_ms", 200)  # 默认 200ms 偏移
+        # 键盘快捷键调整偏移
+        self.root.bind("<Up>", lambda e: self._nudge_offset(50))
+        self.root.bind("<Down>", lambda e: self._nudge_offset(-50))
+        self.root.bind("<Shift-Up>", lambda e: self._nudge_offset(10))
+        self.root.bind("<Shift-Down>", lambda e: self._nudge_offset(-10))
         self.root.bind("<Configure>",self._on_move)
         # 焦点丢失时强制恢复最顶层，防止切到其他软件时窗口消失
         self.root.bind("<FocusOut>",lambda e:self._restore_topmost())
@@ -305,6 +372,29 @@ class TaskbarLyricsWindow:
                 else: s&=~0x20
                 ctypes.windll.user32.SetWindowLongW(h,-20,s)
         except: pass
+
+    def _toggle_debug(self):
+        self._debug_mode = not self._debug_mode
+        if self._debug_mode:
+            if not self._debug_label:
+                self._debug_label = self.canvas.create_text(
+                    10, 4, text="", fill="#00ff00",
+                    font=("Consolas", 9), anchor="nw")
+        else:
+            if self._debug_label:
+                self.canvas.delete(self._debug_label)
+                self._debug_label = None
+
+    def update_debug_info(self, pos_raw, pos_adj, line_text, progress):
+        if self._debug_mode and self._debug_label:
+            self.canvas.itemconfig(self._debug_label,
+                text=f"pos={pos_raw}ms adj={pos_adj}ms offset={self._lyric_offset_ms}ms p={progress:.0%}")
+
+    def _nudge_offset(self, delta):
+        self._lyric_offset_ms += delta
+        self._config["lyric_offset_ms"] = self._lyric_offset_ms
+        self._save_config()
+        log(f"[Offset] {self._lyric_offset_ms}ms ({'+' if delta>0 else ''}{delta})")
 
     def _quit(self): self.root.quit(); self.root.destroy()
 
@@ -455,8 +545,24 @@ class TaskbarLyricsWindow:
     @staticmethod
     def _lerp_color(c1, c2, t):
         """线性插值两个 hex 颜色，t=0 返回 c1，t=1 返回 c2"""
-        r1,g1,b1 = int(c1[1:3],16), int(c1[3:5],16), int(c1[5:7],16)
-        r2,g2,b2 = int(c2[1:3],16), int(c2[3:5],16), int(c2[5:7],16)
+        def norm_color(c):
+            """将颜色规范化为 #RRGGBB 格式"""
+            if not c or not isinstance(c, str) or not c.startswith('#'):
+                return None
+            if len(c) == 7:
+                return c
+            if len(c) == 4:
+                # #RGB → #RRGGBB
+                return f"#{c[1]*2}{c[2]*2}{c[3]*2}"
+            return None
+
+        c1n = norm_color(c1)
+        if c1n is None: c1n = "#FFD700"
+        c2n = norm_color(c2)
+        if c2n is None: c2n = "#555566"
+
+        r1,g1,b1 = int(c1n[1:3],16), int(c1n[3:5],16), int(c1n[5:7],16)
+        r2,g2,b2 = int(c2n[1:3],16), int(c2n[3:5],16), int(c2n[5:7],16)
         r = int(r1 + (r2-r1)*t)
         g = int(g1 + (g2-g1)*t)
         b = int(b1 + (b2-b1)*t)
@@ -485,9 +591,9 @@ class TaskbarLyricsWindow:
         tk.Label(f,text="偏移(ms)",fg="#FFF",bg="#2a2a3e",
                  font=("Microsoft YaHei UI",10)).pack(side=tk.LEFT)
         vs=tk.IntVar(value=self._lyric_offset_ms)
-        tk.Spinbox(f,from_=0,to=1000,textvariable=vs,width=6,
+        tk.Spinbox(f,from_=-2000,to=2000,textvariable=vs,width=6,
                    font=("Consolas",11)).pack(side=tk.LEFT,padx=8)
-        tk.Label(f,text="(正数=歌词提前)",fg="#aaa",bg="#2a2a3e",
+        tk.Label(f,text="(正数=歌词提前，负数=歌词推后)",fg="#aaa",bg="#2a2a3e",
                  font=("Microsoft YaHei UI",9)).pack(side=tk.LEFT,padx=4)
         bf=tk.Frame(win,bg="#2a2a3e"); bf.pack(fill=tk.X,padx=20,pady=10)
         def apply():
@@ -562,8 +668,8 @@ class TaskbarLyricsApp:
         try:
             info = self.media.get_info()
             title,artist,album = info["title"],info["artist"],info.get("album","")
-            pos = info["position_ms"]
-            pos -= self.window._lyric_offset_ms  # 应用歌词偏移
+            pos_raw = info["position_ms"]
+            pos = pos_raw - self.window._lyric_offset_ms
             key = f"{artist}|{title}"
             if key != self._last_song:
                 self._last_song=key; self._ly=[]
@@ -573,25 +679,29 @@ class TaskbarLyricsApp:
                 else: self._loading=False
             if title:
                 if self._loading:
+                    self.window.update_debug_info(pos_raw, pos, "loading...", 0.0)
                     self.window.update_display("♪ 正在加载歌词...","",0.0)
                 elif self._ly:
                     o,t,p = self.lyrics.get_current_line(self._ly, pos)
+                    self.window.update_debug_info(pos_raw, pos, o, p)
                     self.window.update_display(o,t,p)
                 else:
+                    self.window.update_debug_info(pos_raw, pos, "no lyrics", 0.0)
                     self.window.update_display("♪ 暂无歌词 ♪","",0.0)
             else:
                 self.window.update_display("♪ 等待播放...","",0.0)
         except Exception as e:
-            print(f"[Error] {e}")
+            log(f"[Error] {e}")
         # 50ms = 20fps，卡拉OK丝滑的关键
         self.window.root.after(50, self._tick)
 
     def run(self):
-        print("="*50)
-        print("  Windows 任务栏歌词 — 丝滑卡拉OK")
-        print("="*50)
-        print("  左键拖拽 | 右键菜单")
-        print()
+        _init_log()
+        log("="*50)
+        log("  Windows 任务栏歌词 — 丝滑卡拉OK")
+        log("="*50)
+        log("  左键拖拽 | 右键菜单 | 上下箭头调偏移 | 右键菜单开调试")
+        log("")
         self.media.start()
         self.window.root.after(500, self._tick)
         try: self.window.run()
