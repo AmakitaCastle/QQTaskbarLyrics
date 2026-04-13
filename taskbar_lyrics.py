@@ -394,9 +394,9 @@ class TaskbarLyricsWindow:
         est_height = menu_items * 25 + sep_count * 10
 
         x, y = event.x_root, event.y_root
-        # 如果下方空间不够，向上弹出
+        # 如果下方空间不够，将菜单底部对齐到屏幕底部
         if y + est_height > screen_bottom:
-            y = max(0, y - est_height)
+            y = screen_bottom - est_height
 
         self.menu.post(x, y)
 
