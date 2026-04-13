@@ -387,15 +387,13 @@ class TaskbarLyricsWindow:
         except:
             screen_bottom = self.root.winfo_screenheight()
 
+        # 用 Tkinter 请求的高度（准确值）
+        menu_h = self.menu.winfo_reqheight()
+
         x, y = event.x_root, event.y_root
-        # 先临时贴出菜单以获取实际高度
+        if y + menu_h > screen_bottom:
+            y = screen_bottom - menu_h
         self.menu.post(x, y)
-        self.menu.update()
-        actual_h = self.menu.winfo_height()
-        # 如果底部超出屏幕，上移
-        if y + actual_h > screen_bottom:
-            self.menu.unpost()
-            self.menu.post(x, screen_bottom - actual_h)
 
     # ---- 窗口保护 ----
     def _hwnd(self):
