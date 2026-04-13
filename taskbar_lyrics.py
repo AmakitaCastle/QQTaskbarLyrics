@@ -14,6 +14,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from src.utils.log import log, _init_log
 from src.media.provider import MediaInfoProvider
+from src.lyrics.cache import load_disk_lyrics, save_disk_lyrics, disk_cache_key
 
 import ctypes, json, re, threading, time, bisect
 import tkinter as tk
@@ -26,61 +27,10 @@ from pathlib import Path
 # ============================================================
 
 class LyricsManager:
-    CACHE_DIR = Path.home() / ".taskbar_lyrics_cache"
-    CACHE_TTL_SECONDS = 30 * 24 * 3600  # 30 天
 
     def __init__(self, local_dir=None):
         self.local_dir = Path(local_dir) if local_dir else None
         self._cache = {}; self._loading_key = ""
-        self._ensure_cache_dir()
-
-    def _ensure_cache_dir(self):
-        try: self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        except: pass
-
-    def _cache_key(self, title, artist, album=""):
-        return f"{artist}|{title}|{album}"
-
-    def _cache_path(self, key):
-        import hashlib
-        h = hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
-        return self.CACHE_DIR / f"{h}.json"
-
-    def _load_cache(self, key):
-        """从磁盘缓存加载歌词"""
-        try:
-            path = self._cache_path(key)
-            if not path.exists():
-                return None
-            import time
-            age = time.time() - path.stat().st_mtime
-            if age > self.CACHE_TTL_SECONDS:
-                path.unlink(missing_ok=True)
-                return None
-            data = json.loads(path.read_text(encoding="utf-8"))
-            # 反序列化: 将 word_timings 从 list[list] 转回 list[tuple]
-            lyrics = []
-            for item in data.get("lyrics", []):
-                wt = [tuple(w) for w in item[3]] if item[3] else []
-                lyrics.append((item[0], item[1], item[2], wt))
-            return lyrics
-        except:
-            return None
-
-    def _save_cache(self, key, lyrics):
-        """将歌词写入磁盘缓存"""
-        try:
-            path = self._cache_path(key)
-            # 序列化: tuple → list
-            data = {
-                "key": key,
-                "lyrics": [[t, tx, tr, [list(w) for w in wt]] for t, tx, tr, wt in lyrics],
-            }
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(path)
-        except:
-            pass
 
     def _parse_lrc(self, text):
         lines = []
@@ -146,12 +96,12 @@ class LyricsManager:
             return None
 
     def load_async(self, title, artist, cb, album=""):
-        key = self._cache_key(title, artist, album)
+        key = disk_cache_key(title, artist, album)
         if key in self._cache: cb(self._cache[key]); return
         if self._loading_key == key: return
 
         # 先尝试磁盘缓存
-        cached = self._load_cache(key)
+        cached = load_disk_lyrics(key)
         if cached is not None:
             self._cache[key] = cached
             log(f"[Cache] 命中磁盘缓存: {len(cached)} 行")
@@ -163,7 +113,7 @@ class LyricsManager:
             log(f"\n[Lyrics] {artist} - {title}" + (f" ({album})" if album else ""))
             ly = self._try_local(title, artist) or self._fetch_online(title, artist, album) or []
             if ly:
-                self._save_cache(key, ly)
+                save_disk_lyrics(key, ly)
                 log(f"[Cache] 写入磁盘缓存: {len(ly)} 行")
             self._cache[key] = ly; self._loading_key = ""
             log(f"[Lyrics] {len(ly)} 行"); cb(ly)
