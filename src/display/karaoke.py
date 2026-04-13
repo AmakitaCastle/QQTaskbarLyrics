@@ -61,7 +61,9 @@ class KaraokeEngine:
         self._cum_widths = cum
         self._total_px = cum[-1]
 
-        cy = 15
+        # 垂直居中
+        canvas_h = self.canvas.winfo_height() or 42
+        cy = canvas_h // 2
         col_sung = self.colors.get("sung", "#FFD700")
         col_unsung = self.colors.get("unsung", "#555566")
 
@@ -116,7 +118,7 @@ class KaraokeEngine:
             x0 = max(cw - self._total_px - 10, x0)
             x0 = min(10, x0)
 
-        cy = 15
+        cy = self.canvas.winfo_height() // 2
         try:
             self.canvas.itemconfig(self._sung_id, text=sung_part)
             self.canvas.coords(self._sung_id, x0, cy)

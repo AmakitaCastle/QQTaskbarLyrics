@@ -14,6 +14,7 @@ from src.display.config import show_color_config, show_font_config
 class TaskbarLyricsWindow:
     DEFAULT_COLORS = {"bg": "#1a1a2e", "sung": "#FFD700", "unsung": "#555566"}
     DEFAULT_FONTS = {"lyric": ("Microsoft YaHei UI", 14, "bold")}
+    DEFAULT_SIZE = {"width": 900, "height": 42}
 
     def __init__(self):
         try:
@@ -36,7 +37,9 @@ class TaskbarLyricsWindow:
         _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
 
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        ww, wh = min(900, sw - 200), 42
+        _size = self._config.get("size", {})
+        ww = max(200, min(_size.get("width", self.DEFAULT_SIZE["width"]), sw))
+        wh = max(20, min(_size.get("height", self.DEFAULT_SIZE["height"]), 200))
         pos = self._config.get("position", {})
         x = max(0, min(pos.get("x", (sw - ww) // 2), sw - ww))
         y = max(0, min(pos.get("y", sh - wh - 50), sh - wh))
@@ -67,6 +70,7 @@ class TaskbarLyricsWindow:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="鼠标穿透 开/关 (Ctrl+T)", command=self._toggle_ct)
         self.menu.add_separator()
+        self.menu.add_command(label="窗口大小", command=self._size_cfg)
         self.menu.add_command(label="颜色设置", command=self._color_cfg)
         self.menu.add_command(label="字体设置", command=self._font_cfg)
         self.menu.add_separator()
@@ -157,6 +161,7 @@ class TaskbarLyricsWindow:
     def _save_pos(self):
         try:
             self._config["position"] = {"x": self.root.winfo_x(), "y": self.root.winfo_y()}
+            self._config["size"] = {"width": self.root.winfo_width(), "height": self.root.winfo_height()}
             self._save_config()
         except:
             pass
@@ -198,6 +203,47 @@ class TaskbarLyricsWindow:
 
     def _font_cfg(self):
         show_font_config(self.root, self._fonts, self._save_config, self.karaoke)
+
+    def _size_cfg(self):
+        """窗口大小设置"""
+        sw = self.root.winfo_screenwidth()
+        cur_w = self.root.winfo_width()
+        cur_h = self.root.winfo_height()
+        win = tk.Toplevel(self.root)
+        win.title("窗口大小")
+        win.geometry("340x120")
+        win.configure(bg="#2a2a3e")
+        win.transient(self.root)
+        win.grab_set()
+
+        f = tk.Frame(win, bg="#2a2a3e")
+        f.pack(fill=tk.X, padx=20, pady=10)
+        vw = tk.IntVar(value=cur_w)
+        vh = tk.IntVar(value=cur_h)
+        tk.Label(f, text="宽", fg="#FFF", bg="#2a2a3e",
+                 font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
+        tk.Spinbox(f, from_=200, to=sw, textvariable=vw, width=6,
+                   font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
+        tk.Label(f, text="高", fg="#FFF", bg="#2a2a3e",
+                 font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT, padx=(12, 0))
+        tk.Spinbox(f, from_=20, to=200, textvariable=vh, width=6,
+                   font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
+
+        bf = tk.Frame(win, bg="#2a2a3e")
+        bf.pack(fill=tk.X, padx=20, pady=10)
+
+        def apply():
+            w = max(200, min(vw.get(), sw))
+            h = max(20, min(vh.get(), 200))
+            self.root.geometry(f"{w}x{h}")
+            self._config["size"] = {"width": w, "height": h}
+            self._save_config()
+            win.destroy()
+
+        tk.Button(bf, text="应用", command=apply, bg="#4a4a6e", fg="#FFF",
+                  width=10).pack(side=tk.LEFT)
+        tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
+                  width=10).pack(side=tk.RIGHT)
 
     def _save_config(self):
         self._config["colors"] = self._colors
