@@ -133,14 +133,23 @@ class QQMusicProvider(BaseLyricsProvider):
             best_match = None
             best_score = -1
 
+            skip_keywords = ['cover', 'remix', '翻唱', '改编', '版本']
+
+            # 先收集所有歌曲及其是否含 Live/Ver 标记
+            all_songs = []
             for song in songs:
+                song_name = song.get("name", "").lower()
+                is_live_ver = any(kw in song_name for kw in ['live', 'ver.'])
+                all_songs.append((song, is_live_ver))
+
+            # 优先非 Live/Ver 的歌曲；如果全是 Live/Ver 版本，也接受
+            candidates = [(s, v) for s, v in all_songs if not v]
+            if not candidates:
+                candidates = all_songs
+
+            for song, _ in candidates:
                 song_title = song.get("name", "").lower().replace(" ", "")
                 song_artist = song.get("singer", [{}])[0].get("name", "").lower().replace(" ", "")
-
-                skip_keywords = ['cover', 'remix', '翻唱', '改编', '版本', 'ver.', 'live']
-                song_name = song.get("name", "").lower()
-                if any(kw in song_name for kw in skip_keywords):
-                    continue
 
                 score = 0
                 clean_title = song_title.replace("-", "").replace("_", "").replace("~", "")
@@ -191,15 +200,15 @@ class QQMusicProvider(BaseLyricsProvider):
                     log(f"    [QQ匹配] 得分{score}: {song.get('name')} - {song_artist}")
 
             if not best_match:
-                for song in songs:
+                for song, is_live_ver in candidates:
                     song_name = song.get("name", "").lower()
-                    skip_keywords = ['cover', 'remix', '翻唱', '改编', '版本', 'ver.', 'live']
-                    if not any(kw in song_name for kw in skip_keywords):
+                    if not is_live_ver and not any(kw in song_name for kw in skip_keywords):
                         best_match = song
                         log(f"    [QQ匹配] 默认选择: {song.get('name')} - {song.get('singer', [{}])[0].get('name', '')}")
                         break
                 if not best_match:
-                    best_match = songs[0]
+                    song = candidates[0][0]
+                    best_match = song
 
             log(f"    [QQ匹配] 最终选择(score={best_score}): {best_match.get('name')} - {best_match.get('singer', [{}])[0].get('name', '')}")
 

@@ -33,12 +33,11 @@ class LyricsManager:
         vs.append((title, artist))
         if ct:
             vs += [(ct, ca), (ct, "")]
-        for a in parens(artist):
-            vs.append((ct, a))
+        # 括号内的变体（Live/Ver 等）降低优先级，放在最后，但不跳过
+        paren_variants = []
         for t in parens(title):
-            if any(k in t.lower() for k in ["live", "ver", "remix", "inst", "cover"]):
-                continue
-            vs.append((t, ca))
+            paren_variants.append((t, ca))
+        vs.extend(paren_variants)
         seen = set()
         return [(t, a) for t, a in vs if t.strip() and (t.strip(), a.strip()) not in seen
                 and not seen.add((t.strip(), a.strip()))]
@@ -61,29 +60,32 @@ class LyricsManager:
         return None
 
     def _fetch_online(self, title: str, artist: str, album: str = "") -> Optional[list]:
-        for provider in self.providers:
-            log(f"    [LyricsProvider] {provider.__class__.__name__} 搜索: {artist} - {title}" + (f" (专辑: {album})" if album else ""))
-            song_info = provider.search(title, artist, album)
-            if not song_info:
-                continue
-            song_id = song_info.get("songID", 0)
-            cache_key = f"lyrics:{song_id}"
-            cached = cache_get(cache_key)
-            if cached is not None:
-                log(f"\n[LyricsProvider] 缓存命中(songID={song_id})")
-                if cached == "__NONE__":
-                    return None
-                return cached
-            lyrics = provider.get_lyrics(song_info)
-            if lyrics:
-                cache_set(cache_key, lyrics)
-                has_trans = sum(1 for item in lyrics if len(item) > 2 and item[2])
-                has_word = sum(1 for item in lyrics if len(item) > 3 and item[3])
-                log(f"  >> 获取成功: {len(lyrics)} 行"
-                    + (" [逐字]" if has_word > 0 else "")
-                    + (" [翻译]" if has_trans > 0 else ""))
-                return lyrics
-            cache_set(cache_key, "__NONE__")
+        variants = self._variants(title, artist)
+        log(f"    [搜索] 生成 {len(variants)} 个搜索变体")
+        for t, a in variants:
+            for provider in self.providers:
+                log(f"    [{provider.__class__.__name__}] 尝试: '{t}' - '{a}'" + (f" (专辑: {album})" if album else ""))
+                song_info = provider.search(t, a, album)
+                if not song_info:
+                    continue
+                song_id = song_info.get("songID", 0)
+                cache_key = f"lyrics:{song_id}"
+                cached = cache_get(cache_key)
+                if cached is not None:
+                    log(f"\n[LyricsProvider] 缓存命中(songID={song_id})")
+                    if cached == "__NONE__":
+                        continue
+                    return cached
+                lyrics = provider.get_lyrics(song_info)
+                if lyrics:
+                    cache_set(cache_key, lyrics)
+                    has_trans = sum(1 for item in lyrics if len(item) > 2 and item[2])
+                    has_word = sum(1 for item in lyrics if len(item) > 3 and item[3])
+                    log(f"  >> 获取成功: {len(lyrics)} 行"
+                        + (" [逐字]" if has_word > 0 else "")
+                        + (" [翻译]" if has_trans > 0 else ""))
+                    return lyrics
+                cache_set(cache_key, "__NONE__")
         return None
 
     def load_async(self, title: str, artist: str, cb: Callable, album: str = ""):
