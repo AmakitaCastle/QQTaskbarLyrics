@@ -30,6 +30,11 @@ class TaskbarLyricsWindow:
         self._colors = self._config.get("colors", self.DEFAULT_COLORS.copy())
         self._fonts = self._config.get("fonts", self.DEFAULT_FONTS.copy())
 
+        # 透明模式：用一个极罕见颜色作为透明色
+        self._TRANSPARENT_MAGIC = "#000001"
+        _bg = self._colors.get("bg", self.DEFAULT_COLORS["bg"])
+        _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
+
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         ww, wh = min(900, sw - 200), 42
         pos = self._config.get("position", {})
@@ -39,12 +44,14 @@ class TaskbarLyricsWindow:
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 1.0)
-        self.root.configure(bg=self._colors["bg"])
+        self.root.configure(bg=_actual_bg)
+        if _bg == "transparent":
+            self.root.attributes("-transparentcolor", self._TRANSPARENT_MAGIC)
         self.root.after(100, self._setup_style)
         self.root.after(500, self._ensure_topmost)
 
         # ---- Canvas ----
-        self.canvas = tk.Canvas(self.root, bg=self._colors["bg"],
+        self.canvas = tk.Canvas(self.root, bg=_actual_bg,
                                 height=wh, highlightthickness=0, bd=0)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=12)
 
@@ -168,7 +175,21 @@ class TaskbarLyricsWindow:
         self.root.destroy()
 
     def _color_cfg(self):
-        show_color_config(self.root, self._colors, self._save_config, self.root, self.canvas)
+        show_color_config(self.root, self._colors, self._apply_colors, self.root, self.canvas)
+
+    def _apply_colors(self):
+        """应用颜色配置到窗口"""
+        self._TRANSPARENT_MAGIC = "#000001"
+        _bg = self._colors.get("bg", self.DEFAULT_COLORS["bg"])
+        _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
+        self.root.configure(bg=_actual_bg)
+        self.canvas.configure(bg=_actual_bg)
+        if _bg == "transparent":
+            self.root.attributes("-transparentcolor", self._TRANSPARENT_MAGIC)
+        else:
+            self.root.attributes("-transparentcolor", "")
+        self.karaoke._text = ""  # force rebuild
+        self._save_config()
 
     def _font_cfg(self):
         show_font_config(self.root, self._fonts, self._save_config, self.karaoke)

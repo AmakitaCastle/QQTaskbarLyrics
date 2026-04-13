@@ -31,13 +31,35 @@ def save_config(config: dict):
 def show_color_config(parent, colors, save_fn, root, canvas):
     win = tk.Toplevel(parent)
     win.title("颜色")
-    win.geometry("380x280")
+    win.geometry("420x320")
     win.configure(bg="#2a2a3e")
     win.transient(parent)
     win.grab_set()
 
     cv = {}
-    for lb, k in [("背景色", "bg"), ("已唱(高亮)", "sung"), ("未唱(暗色)", "unsung")]:
+    is_transparent = tk.BooleanVar(value=colors.get("bg") == "transparent")
+    bg_entry_var = None
+
+    # --- 背景色行 ---
+    f_bg = tk.Frame(win, bg="#2a2a3e")
+    f_bg.pack(fill=tk.X, padx=20, pady=(12, 6))
+    tk.Label(f_bg, text="背景色", fg="#FFF", bg="#2a2a3e",
+             font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
+    bg_val = colors.get("bg", "#1a1a2e")
+    if bg_val == "transparent":
+        bg_val = "#1a1a2e"  # show a default in the entry
+    bg_entry_var = tk.StringVar(value=bg_val)
+    cv["bg"] = bg_entry_var
+    tk.Entry(f_bg, textvariable=bg_entry_var, width=9, font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
+    bg_pv = tk.Label(f_bg, text="  ", bg=bg_val, width=3, relief=tk.RIDGE)
+    bg_pv.pack(side=tk.LEFT)
+    bg_entry_var.trace_add("write", lambda *a, p=bg_pv, vv=bg_entry_var: p.config(bg=vv.get()))
+
+    tk.Checkbutton(f_bg, text="透明", variable=is_transparent, bg="#2a2a3e", fg="#FFF",
+                   selectcolor="#4a4a6e", font=("Microsoft YaHei UI", 9)).pack(side=tk.LEFT, padx=12)
+
+    # --- 已唱/未唱 ---
+    for lb, k in [("已唱(高亮)", "sung"), ("未唱(暗色)", "unsung")]:
         f = tk.Frame(win, bg="#2a2a3e")
         f.pack(fill=tk.X, padx=20, pady=6)
         tk.Label(f, text=lb, fg="#FFF", bg="#2a2a3e",
@@ -49,15 +71,20 @@ def show_color_config(parent, colors, save_fn, root, canvas):
         pv.pack(side=tk.LEFT)
         v.trace_add("write", lambda *a, p=pv, vv=v: p.config(bg=vv.get()))
 
+    # 提示
+    tk.Label(win, text="* 透明模式下背景不可见，仅显示歌词文字",
+             fg="#888", bg="#2a2a3e", font=("Microsoft YaHei UI", 9)).pack(anchor=tk.W, padx=20, pady=(4, 0))
+
     bf = tk.Frame(win, bg="#2a2a3e")
     bf.pack(fill=tk.X, padx=20, pady=12)
 
     def apply():
-        for k, v in cv.items():
-            colors[k] = v.get()
-        root.configure(bg=colors["bg"])
-        canvas.configure(bg=colors["bg"])
+        if is_transparent.get():
+            colors["bg"] = "transparent"
+        else:
+            colors["bg"] = bg_entry_var.get()
         save_fn()
+        # 刷新窗口背景
         win.destroy()
 
     tk.Button(bf, text="应用", command=apply, bg="#4a4a6e", fg="#FFF",
@@ -65,43 +92,6 @@ def show_color_config(parent, colors, save_fn, root, canvas):
     tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
               width=10).pack(side=tk.RIGHT)
 
-
-def show_font_config(parent, fonts, save_fn, karaoke_engine):
-    win = tk.Toplevel(parent)
-    win.title("颜色")
-    win.geometry("380x280")
-    win.configure(bg="#2a2a3e")
-    win.transient(parent)
-    win.grab_set()
-
-    cv = {}
-    for lb, k in [("背景色", "bg"), ("已唱(高亮)", "sung"), ("未唱(暗色)", "unsung")]:
-        f = tk.Frame(win, bg="#2a2a3e")
-        f.pack(fill=tk.X, padx=20, pady=6)
-        tk.Label(f, text=lb, fg="#FFF", bg="#2a2a3e",
-                 font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
-        v = tk.StringVar(value=colors.get(k, "#666"))
-        cv[k] = v
-        tk.Entry(f, textvariable=v, width=9, font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
-        pv = tk.Label(f, text="  ", bg=colors.get(k, "#666"), width=3, relief=tk.RIDGE)
-        pv.pack(side=tk.LEFT)
-        v.trace_add("write", lambda *a, p=pv, vv=v: p.config(bg=vv.get()))
-
-    bf = tk.Frame(win, bg="#2a2a3e")
-    bf.pack(fill=tk.X, padx=20, pady=12)
-
-    def apply():
-        for k, v in cv.items():
-            colors[k] = v.get()
-        root.configure(bg=colors["bg"])
-        canvas.configure(bg=colors["bg"])
-        save_fn()
-        win.destroy()
-
-    tk.Button(bf, text="应用", command=apply, bg="#4a4a6e", fg="#FFF",
-              width=10).pack(side=tk.LEFT)
-    tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
-              width=10).pack(side=tk.RIGHT)
 
 
 def show_font_config(parent, fonts, save_fn, karaoke_engine):
