@@ -361,7 +361,7 @@ class TaskbarLyricsWindow:
         self.menu.add_command(label="字体设置", command=self._font_cfg)
         self.menu.add_separator()
         self.menu.add_command(label="退出", command=self._quit)
-        self.root.bind("<Button-3>", lambda e: self.menu.post(e.x_root,e.y_root))
+        self.root.bind("<Button-3>", self._show_menu)
         self._ct=False
         self._debug_mode = False
         self._debug_label = None
@@ -374,6 +374,31 @@ class TaskbarLyricsWindow:
         self.root.bind("<Configure>",self._on_move)
         # 焦点丢失时强制恢复最顶层，防止切到其他软件时窗口消失
         self.root.bind("<FocusOut>",lambda e:self._restore_topmost())
+
+    def _show_menu(self, event):
+        """智能弹出右键菜单，避免被屏幕边缘截断"""
+        import ctypes
+        try:
+            # 获取屏幕工作区高度（排除任务栏）
+            spi = ctypes.windll.user32.SystemParametersInfoW
+            work_area = ctypes.c_int * 4
+            wa = work_area()
+            spi(0x0030, 0, wa, 0)  # SPI_GETWORKAREA
+            screen_bottom = wa[3]  # 工作区底部 y 坐标
+        except:
+            screen_bottom = self.root.winfo_screenheight()
+
+        # 估算菜单高度（每项约 25px + 分隔符 10px）
+        menu_items = 7  # 7 个菜单项
+        sep_count = 2   # 2 个分隔符
+        est_height = menu_items * 25 + sep_count * 10
+
+        x, y = event.x_root, event.y_root
+        # 如果下方空间不够，向上弹出
+        if y + est_height > screen_bottom:
+            y = max(0, y - est_height)
+
+        self.menu.post(x, y)
 
     # ---- 窗口保护 ----
     def _hwnd(self):
