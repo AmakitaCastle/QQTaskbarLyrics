@@ -1,1 +1,1 @@
-# src/media package
+from src.media.provider import MediaInfoProvider

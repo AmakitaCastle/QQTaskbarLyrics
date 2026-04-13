@@ -1,1 +1,1 @@
-# src/display package
+from src.display.window import TaskbarLyricsWindow
