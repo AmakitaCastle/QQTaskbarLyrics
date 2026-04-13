@@ -817,22 +817,23 @@ class LyricsProvider:
     def get_lyrics(self, title: str, artist: str = "", album: str = "") -> Optional[List[Tuple]]:
         """获取歌词
         返回: [(time_ms, text, translation, word_timings), ...]
+        缓存 key 基于 QQ songID，不受 GSMTC 标题格式影响
         """
-        cache_key = f"lyrics:{title}:{artist}:{album}"
-        cached = cache_get(cache_key)
-        if cached is not None:
-            log(f"\n[LyricsProvider] 缓存命中: {artist} - {title}")
-            if cached == "__NONE__":
-                return None
-            return cached
-
         log(f"\n[LyricsProvider] QQ音乐搜索: {artist} - {title}" + (f" (专辑: {album})" if album else ""))
 
         song_info = self.qq.search(title, artist, album)
         if not song_info:
             log("  [x] 未找到匹配的歌曲")
-            cache_set(cache_key, "__NONE__")
             return None
+
+        song_id = song_info.get("songID", 0)
+        cache_key = f"lyrics:{song_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            log(f"\n[LyricsProvider] 缓存命中(songID={song_id}): {artist} - {title}")
+            if cached == "__NONE__":
+                return None
+            return cached
 
         log(f"     找到: {song_info.get('title')} - {song_info.get('artist')}")
         lyrics = self.qq.get_lyrics(song_info)
