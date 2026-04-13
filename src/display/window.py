@@ -65,14 +65,19 @@ class TaskbarLyricsWindow:
 
         # 右键菜单 — 只保留：穿透、颜色、字体、退出
         self.menu = tk.Menu(self.root, tearoff=0)
-        self.menu.add_command(label="鼠标穿透 开/关", command=self._toggle_ct)
+        self.menu.add_command(label="鼠标穿透 开/关 (Ctrl+T)", command=self._toggle_ct)
         self.menu.add_separator()
         self.menu.add_command(label="颜色设置", command=self._color_cfg)
         self.menu.add_command(label="字体设置", command=self._font_cfg)
         self.menu.add_separator()
-        self.menu.add_command(label="退出", command=self._quit)
+        self.menu.add_command(label="退出 (Esc)", command=self._quit)
         self.root.bind("<Button-3>", self._show_menu)
         self._ct = False
+
+        # 键盘快捷键：Esc 退出，Ctrl+T 切换穿透
+        self.root.bind("<Escape>", lambda e: self._quit())
+        self.root.bind("<Control-t>", lambda e: self._toggle_ct())
+        self.root.bind("<Control-T>", lambda e: self._toggle_ct())
 
         self.root.bind("<Configure>", self._on_move)
         self.root.bind("<FocusOut>", lambda e: self._restore_topmost())

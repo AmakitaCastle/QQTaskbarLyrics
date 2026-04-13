@@ -69,7 +69,7 @@ class TaskbarLyricsApp:
         log("=" * 50)
         log("  Windows 任务栏歌词 — 模块化架构")
         log("=" * 50)
-        log("  左键拖拽 | 右键菜单")
+        log("  左键拖拽 | 右键菜单 | Esc退出 | Ctrl+T穿透")
         log("")
         self.media.start()
         self.window.root.after(500, self._tick)
