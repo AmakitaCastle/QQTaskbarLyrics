@@ -316,7 +316,7 @@ class TaskbarLyricsWindow:
         self._fonts = self._config.get("fonts", self.DEFAULT_FONTS.copy())
 
         sw,sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        ww,wh = min(900,sw-200), 42
+        ww,wh = min(900,sw-200), 30
         pos=self._config.get("position",{})
         x=max(0,min(pos.get("x",(sw-ww)//2),sw-ww))
         y=max(0,min(pos.get("y",sh-wh-50),sh-wh))
@@ -556,7 +556,7 @@ class TaskbarLyricsWindow:
         self._cum_widths = cum
         self._total_px = cum[-1]
 
-        cy = 21  # 垂直居中
+        cy = 15  # 垂直居中 (wh=30/2)
         col_sung = self._colors.get("sung","#FFD700")
         col_unsung = self._colors.get("unsung","#555566")
 
@@ -618,7 +618,7 @@ class TaskbarLyricsWindow:
             x0 = max(cw - self._total_px - 10, x0)
             x0 = min(10, x0)
 
-        cy = 21
+        cy = 15
 
         try:
             self.canvas.itemconfig(self._sung_id, text=sung_part)
