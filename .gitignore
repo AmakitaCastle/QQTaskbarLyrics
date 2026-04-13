@@ -41,5 +41,12 @@ Thumbs.db
 # Test files
 _test_*.py
 
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+
 # Cache
 .lyrics_cache/
