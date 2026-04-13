@@ -27,14 +27,19 @@ env/
 .DS_Store
 Thumbs.db
 
-# Claude Code
-.claude/
+# Logs
+*.log
 
-# QQ Music API (Node.js)
-qq-music-api-main/
-qq-music-api-main.zip
+# Dot files/directories (except .gitignore itself)
+.*
+!.gitignore
 
-# Node.js
-node_modules/
+# Markdown docs
+*.md
+!CLAUDE.md
 
+# Test files
+_test_*.py
 
+# Cache
+.lyrics_cache/
