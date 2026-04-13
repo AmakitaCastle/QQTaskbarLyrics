@@ -1,0 +1,1 @@
+# src/lyrics package
