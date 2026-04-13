@@ -1,6 +1,6 @@
 """
-LDDC 核心 API 模块 - 多平台歌词获取
-支持: QQ音乐(QRC)、酷狗音乐(KRC)、网易云音乐(LRC)、Lrclib
+QQ 音乐歌词 API 模块
+支持: QRC 逐字歌词 + 翻译 (GetPlayLyricInfo) + 旧接口回退
 """
 
 import re
@@ -13,7 +13,7 @@ import requests
 from typing import List, Tuple, Optional, Dict
 from urllib.parse import quote
 
-# 日志输出到文件（后台线程 print 容易丢失）
+# 日志输出到文件
 import threading
 _log_lock = threading.Lock()
 _log_file = None
@@ -37,17 +37,9 @@ def log(msg):
 
 # ============================================================
 # QQ 音乐 QRC 歌词解密 — 对齐 LDDC 项目
-# 参考: https://github.com/cmzj/LDDC
-#
-# 云端 API (crypt=1): hex → TripleDES → zlib解压 → QRC明文
-# 本地文件 (QMC1): 文件头跳过11字节 → QMC1 XOR → TripleDES → zlib → QRC明文
 # ============================================================
 
-# TripleDES 密钥 (LDDC 的 QRC_KEY)
 _QRC_3DES_KEY = b"!@#)(*$%123ZXC!@!@#)(NHL"
-
-# TripleDES 实现 — 完全移植自 LDDC (基于 QQMusicDecoder C# 代码)
-# 参考: https://github.com/WXRIW/QQMusicDecoder
 
 _ENCRYPT = 1
 _DECRYPT = 0
@@ -169,41 +161,23 @@ def _tripledes_crypt(data, key):
 
 
 def _qrc_cloud_decrypt(encrypted_hex: str) -> str:
-    """解密 QQ 音乐云端歌词（TripleDES + zlib）
-
-    流程: hex字符串 → bytearray → 3DES解密 → zlib解压 → QRC明文
-    完全对齐 LDDC 项目 (LDDC/core/decryptor/__init__.py)
-    """
-    # 1. hex → bytearray
+    """解密 QQ 音乐云端歌词（TripleDES + zlib）"""
     data = bytearray.fromhex(encrypted_hex)
-
-    # 2. TripleDES 解密
     schedule = _tripledes_key_setup(_QRC_3DES_KEY, _DECRYPT)
     decrypted = bytearray()
     for i in range(0, len(data), 8):
         decrypted += _tripledes_crypt(data[i:i+8], schedule)
-
-    # 3. zlib 解压
     return zlib.decompress(decrypted).decode("utf-8")
 
 
 def _qrc_local_decrypt(data: bytearray) -> str:
-    """解密本地 QMC1 加密文件（QMC1 XOR + TripleDES + zlib）
-
-    流程: 跳过11字节文件头 → QMC1 XOR → TripleDES → zlib → QRC明文
-    """
-    # 1. 跳过文件头
+    """解密本地 QMC1 加密文件（QMC1 XOR + TripleDES + zlib）"""
     encrypted = data[11:]
-
-    # 2. QMC1 XOR 解密
     _qmc1_decrypt(encrypted)
-
-    # 3. TripleDES + zlib (同云端)
     schedule = _tripledes_key_setup(_QRC_3DES_KEY, _DECRYPT)
     decrypted = bytearray()
     for i in range(0, len(encrypted), 8):
         decrypted += _tripledes_crypt(encrypted[i:i+8], schedule)
-
     return zlib.decompress(decrypted).decode("utf-8")
 
 
@@ -247,10 +221,7 @@ _QRC_WORD_PATTERN = re.compile(
 
 
 def _parse_qrc(qrc_text: str) -> List[Tuple[int, str, List]]:
-    """解析 QRC 逐字歌词
-    返回: [(time_ms, text, word_timings), ...]
-    word_timings: [(char_start_ms, char_duration_ms, char), ...]
-    """
+    """解析 QRC 逐字歌词"""
     match = _QRC_CONTENT_PATTERN.search(qrc_text)
     if not match:
         return _parse_lrc_fallback(qrc_text)
@@ -272,7 +243,7 @@ def _parse_qrc(qrc_text: str) -> List[Tuple[int, str, List]]:
         for wm in _QRC_WORD_PATTERN.finditer(line_content):
             char_text = wm.group("content")
             if char_text and char_text != "\r":
-                char_start = int(wm.group("start")) - line_start  # 转为相对于行首的偏移
+                char_start = int(wm.group("start")) - line_start
                 char_duration = int(wm.group("duration"))
                 words.append((char_start, char_duration, char_text))
                 text_parts.append(char_text)
@@ -309,7 +280,7 @@ def _parse_lrc_fallback(lrc_text: str) -> List[Tuple[int, str, List]]:
 
 
 # ============================================================
-# 本地缓存模块 — 避免重复请求接口
+# 本地缓存模块
 # ============================================================
 
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.lyrics_cache')
@@ -352,7 +323,6 @@ def cache_get(key: str) -> Optional[dict]:
     entry = _cache_data.get(key)
     if not entry:
         return None
-    # 检查过期（24小时）
     if time.time() - entry.get("ts", 0) > 86400:
         del _cache_data[key]
         _save_cache()
@@ -379,20 +349,8 @@ def cache_clean():
         log(f"    [缓存] 清理 {cleaned} 条过期记录")
 
 
-class LyricsSource:
-    """歌词数据源基类"""
-
-    def search(self, title: str, artist: str = "") -> Optional[Dict]:
-        """搜索歌曲，返回最佳匹配结果"""
-        raise NotImplementedError
-
-    def get_lyrics(self, song_id: str) -> Optional[List[Tuple[int, str, List]]]:
-        """获取歌词，返回 [(time_ms, text, word_timings), ...]"""
-        raise NotImplementedError
-
-
-class QQMusicAPI(LyricsSource):
-    """QQ音乐 API - 支持歌词获取"""
+class QQMusicAPI:
+    """QQ音乐 API - 唯一的歌词数据源"""
 
     def __init__(self):
         self._session_cache = None
@@ -442,7 +400,6 @@ class QQMusicAPI(LyricsSource):
                 "sid": session_data.get("sid", ""),
                 "userip": session_data.get("userip", "")
             }
-            # 回填到 comm
             self.comm["uid"] = self._session_cache["uid"]
             self.comm["sid"] = self._session_cache["sid"]
             self.comm["userip"] = self._session_cache["userip"]
@@ -455,7 +412,6 @@ class QQMusicAPI(LyricsSource):
     def search(self, title: str, artist: str = "", album: str = "") -> Optional[Dict]:
         """搜索歌曲，尝试找到最佳匹配"""
         query = f"{title} {artist}".strip()
-        # 检查搜索缓存
         cache_key = f"qq_search:{query}"
         cached = cache_get(cache_key)
         if cached:
@@ -464,7 +420,6 @@ class QQMusicAPI(LyricsSource):
         log(f"    [QQ搜索] query='{query}'")
 
         try:
-            # 使用 musicu 接口搜索
             url = "https://u.y.qq.com/cgi-bin/musicu.fcg"
             payload = {
                 "req_1": {
@@ -478,20 +433,20 @@ class QQMusicAPI(LyricsSource):
                     }
                 }
             }
-            
+
             params = {
                 "format": "json",
                 "data": json.dumps(payload)
             }
-            
+
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "Referer": "https://y.qq.com/"
             }
-            
+
             resp = requests.get(url, params=params, headers=headers, timeout=10)
             data = resp.json()
-            
+
             req_1 = data.get("req_1", {})
             body = req_1.get("data", {})
             songs = body.get("body", {}).get("song", {}).get("list", [])
@@ -500,14 +455,12 @@ class QQMusicAPI(LyricsSource):
                 log(f"    [QQ搜索] 无结果")
                 return None
 
-            # 打印前3个搜索结果
             for i, song in enumerate(songs[:3]):
                 s_title = song.get("name", "")
                 s_artist = song.get("singer", [{}])[0].get("name", "")
                 s_album = song.get("album", {}).get("name", "")
                 log(f"    [QQ搜索] 结果{i+1}: {s_title} - {s_artist} (专辑: {s_album})")
 
-            # 尝试找到最佳匹配 — 打分制
             title_lower = title.lower().replace(" ", "")
             artist_lower = artist.lower().replace(" ", "") if artist else ""
 
@@ -518,7 +471,6 @@ class QQMusicAPI(LyricsSource):
                 song_title = song.get("name", "").lower().replace(" ", "")
                 song_artist = song.get("singer", [{}])[0].get("name", "").lower().replace(" ", "")
 
-                # 跳过翻唱、cover、remix等版本
                 skip_keywords = ['cover', 'remix', '翻唱', '改编', '版本', 'ver.', 'live']
                 song_name = song.get("name", "").lower()
                 if any(kw in song_name for kw in skip_keywords):
@@ -528,49 +480,44 @@ class QQMusicAPI(LyricsSource):
                 clean_title = song_title.replace("-", "").replace("_", "").replace("~", "")
                 clean_target = title_lower.replace("-", "").replace("_", "").replace("~", "")
 
-                # 标题匹配打分
                 if clean_title == clean_target:
-                    score += 100  # 完全匹配
+                    score += 100
                 elif clean_title.startswith(clean_target) or clean_target.startswith(clean_title):
-                    score += 60   # 前缀匹配
+                    score += 60
                 elif title_lower in song_title or song_title in title_lower:
-                    score += 30   # 包含匹配
+                    score += 30
                 else:
-                    continue  # 标题都不匹配，跳过
+                    continue
 
-                # 艺术家匹配 — 用户指定了艺术家时，结果必须匹配
                 if artist_lower and song_artist:
                     clean_artist = song_artist.replace("-", "").replace("_", "")
                     clean_target_artist = artist_lower.replace("-", "").replace("_", "")
                     if clean_artist == clean_target_artist:
-                        score += 50  # 艺术家完全匹配
+                        score += 50
                     elif clean_target_artist in clean_artist or clean_artist in clean_target_artist:
-                        score += 30  # 艺术家部分匹配
+                        score += 30
                     elif album:
-                        # 艺术家不匹配，但专辑包含 WHITE ALBUM2 等同作品关键词
-                        # 允许同作品不同歌手的版本（如角色歌）
                         album_lower = album.lower().replace(" ", "")
                         song_album = song.get("album", {}).get("name", "").lower().replace(" ", "")
                         white_album_keywords = ['white album2', 'whitealbum2', 'white album', 'wa2']
                         same_work = any(kw in album_lower.replace(" ", "") for kw in white_album_keywords) and \
                                     any(kw in song_album for kw in white_album_keywords)
                         if not same_work:
-                            continue  # 不同作品，跳过
+                            continue
                     else:
-                        continue  # 艺术家不匹配且无专辑信息，跳过
+                        continue
                 elif artist_lower and not song_artist:
-                    continue  # 用户指定了艺术家但结果没有艺术家信息，跳过
+                    continue
 
-                # 专辑名匹配加分
                 if album:
                     song_album = song.get("album", {}).get("name", "").lower()
                     clean_album = album.lower().replace(" ", "")
                     clean_song_album = song_album.replace(" ", "")
                     if clean_album == clean_song_album:
-                        score += 80  # 专辑完全匹配
+                        score += 80
                         log(f"    [QQ匹配] 专辑匹配成功: {song.get('name')} - {song_artist}")
                     elif clean_album in clean_song_album or clean_song_album in clean_album:
-                        score += 40  # 专辑包含
+                        score += 40
 
                 if score > best_score:
                     best_score = score
@@ -603,19 +550,13 @@ class QQMusicAPI(LyricsSource):
         except Exception as e:
             log(f"    [QQ音乐搜索] 失败: {e}")
             return None
-    
+
     def get_lyrics(self, song_info: Dict) -> Optional[List[Tuple[int, str, str, List]]]:
         """获取歌词（优先旧接口，QRC 需登录）
         返回: [(time_ms, text, translation, word_timings), ...]
-
-        对齐 LDDC 项目的流程：
-        1. 旧接口（无需登录，但可能无逐字时间）
-        2. GetPlayLyricInfo（需要 session，返回 QRC 逐字歌词）
-           解密: hex → TripleDES → zlib → QRC明文
         """
         log(f"    [QQ音乐歌词] 开始获取歌词: songID={song_info.get('songID', 0)}, songMID={song_info.get('id', '')}")
 
-        # 先尝试旧接口（无需登录，稳定）
         legacy_result = self._get_lyrics_legacy(song_info)
         if legacy_result:
             has_trans = sum(1 for _, _, tr, _ in legacy_result if tr)
@@ -627,7 +568,6 @@ class QQMusicAPI(LyricsSource):
         else:
             log(f"    [QQ音乐歌词] 旧接口返回 None")
 
-        # GetPlayLyricInfo — 对齐 LDDC 的请求参数
         log("    [QQ音乐歌词] 尝试 GetPlayLyricInfo...")
         song_id = song_info.get("songID", 0)
         if not song_id:
@@ -658,17 +598,17 @@ class QQMusicAPI(LyricsSource):
                         "albumName": base64.b64encode(album.encode()).decode() if album else "",
                         "singerName": base64.b64encode(singer.encode()).decode() if singer else "",
                         "interval": duration,
-                        "crypt": 1,          # 加密方式（LDDC 参数）
-                        "qrc": 1,            # 获取 QRC 逐字歌词
-                        "trans": 1,          # 获取翻译
-                        "roma": 1,           # 获取罗马音
-                        "lrc_t": 0,          # 歌词类型标识
-                        "qrc_t": 0,          # QRC类型标识
-                        "trans_t": 0,        # 翻译类型标识
-                        "roma_t": 0,         # 罗马音类型标识
-                        "type": 0,           # 类型
-                        "ct": 19,            # 客户端类型（LDDC 参数）
-                        "cv": 2111,          # 客户端版本（LDDC 参数）
+                        "crypt": 1,
+                        "qrc": 1,
+                        "trans": 1,
+                        "roma": 1,
+                        "lrc_t": 0,
+                        "qrc_t": 0,
+                        "trans_t": 0,
+                        "roma_t": 0,
+                        "type": 0,
+                        "ct": 19,
+                        "cv": 2111,
                     }
                 }
             }
@@ -682,9 +622,6 @@ class QQMusicAPI(LyricsSource):
             data = resp.json()
 
             lyric_info = data.get("request", {}).get("data", {})
-
-            # GetPlayLyricInfo 返回的数据结构：直接包含 songID/lyric/crypt 等字段，
-            # 没有 "code" 字段。成功时 lyric 有内容，失败时 lyric 为空字符串。
             lyric_enc = lyric_info.get("lyric", "")
             trans_enc = lyric_info.get("trans", "")
             crypt = lyric_info.get("crypt", 1)
@@ -698,9 +635,7 @@ class QQMusicAPI(LyricsSource):
 
             log(f"    [QQ音乐歌词] lyric 长度={len(lyric_enc)}, trans 长度={len(trans_enc)}, crypt={crypt}")
 
-            # 解密原文 — 使用 TripleDES (LDDC 方式)
             try:
-                # LDDC 云端 API: hex 编码 + TripleDES + zlib
                 log(f"    [QQ音乐歌词] 使用 TripleDES 解密 (crypt={crypt})")
                 orig_text = _qrc_cloud_decrypt(lyric_enc)
                 log(f"    [QQ音乐歌词] QRC 解密成功, 原文前100字: {orig_text[:100]}")
@@ -724,10 +659,9 @@ class QQMusicAPI(LyricsSource):
             orig_lines = _parse_qrc(orig_text)
             log(f"    [QQ音乐歌词] QRC 解析 {len(orig_lines)} 行")
 
-            # 解密翻译 — 翻译字段通常是 LRC 格式，不是 QRC
             trans_map = {}
-            trans_lines_list = []  # 保留行序，用于按行对齐
-            trans_decrypted_text = None  # 保存解密后的原文，用于判断格式
+            trans_lines_list = []
+            trans_decrypted_text = None
             if trans_enc:
                 try:
                     trans_text = _qrc_cloud_decrypt(trans_enc)
@@ -735,10 +669,8 @@ class QQMusicAPI(LyricsSource):
                     trans_decrypted_text = trans_text
 
                     if '<Lyric_1' in trans_text[:200]:
-                        # QRC 格式：直接解析
                         trans_parsed = _parse_qrc(trans_text)
                     else:
-                        # LRC 格式（绝大多数情况）：使用 LRC 解析
                         trans_parsed = _parse_lrc_fallback(trans_text)
 
                     for time_ms, text, _ in trans_parsed:
@@ -772,25 +704,20 @@ class QQMusicAPI(LyricsSource):
             else:
                 log(f"    [QQ音乐歌词] trans 字段为空，此歌曲无官方翻译")
 
-            # 合并原文和翻译
-            # 判断翻译是否为真正的 QRC 格式（检查是否有 QRC XML 标签）
             is_qrc_trans = (trans_decrypted_text is not None and '<Lyric_1' in trans_decrypted_text[:200])
 
             result = []
             if trans_lines_list and not is_qrc_trans:
-                # LRC 翻译：按行序对齐（LDDC 思路），原文和翻译逐行对应
                 for i, (time_ms, text, word_timings) in enumerate(orig_lines):
                     translation = trans_lines_list[i][1] if i < len(trans_lines_list) else ""
                     result.append((time_ms, text, translation, word_timings))
                 log(f"    [QQ音乐歌词] 翻译合并: LRC 按行对齐 ({len(trans_lines_list)} 行翻译)")
             elif trans_map and is_qrc_trans:
-                # QRC 翻译：精确时间戳匹配
                 for time_ms, text, word_timings in orig_lines:
                     translation = trans_map.get(time_ms, "")
                     result.append((time_ms, text, translation, word_timings))
                 log(f"    [QQ音乐歌词] 翻译合并: QRC 精确匹配")
             else:
-                # 无翻译
                 for time_ms, text, word_timings in orig_lines:
                     result.append((time_ms, text, "", word_timings))
 
@@ -859,7 +786,7 @@ class QQMusicAPI(LyricsSource):
         except Exception as e:
             log(f"    [QQ音乐歌词(旧)] 失败: {e}")
             return None
-    
+
     def _parse_lrc(self, lrc_text: str) -> List[Tuple[int, str, List]]:
         """解析 LRC 歌词"""
         lines = []
@@ -867,8 +794,6 @@ class QQMusicAPI(LyricsSource):
             line = line.strip()
             if not line:
                 continue
-            
-            # 匹配 [mm:ss.xx] 或 [mm:ss.xxx]
             matches = re.findall(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
             for mm, ss, ms, text in matches:
                 time_ms = int(mm) * 60000 + int(ss) * 1000
@@ -876,652 +801,69 @@ class QQMusicAPI(LyricsSource):
                     time_ms += int(ms) * 10
                 else:
                     time_ms += int(ms)
-                
                 text = text.strip()
                 if text:
                     lines.append((time_ms, text, []))
-        
-        lines.sort(key=lambda x: x[0])
-        return lines
-
-
-class KugouAPI(LyricsSource):
-    """酷狗音乐 API - 支持 KRC 逐字歌词"""
-    
-    SEARCH_URL = "https://mobiles.kugou.com/api/v3/search/song"
-    
-    def search(self, title: str, artist: str = "", album: str = "") -> Optional[Dict]:
-        """搜索歌曲"""
-        query = f"{title} {artist}".strip()
-        cache_key = f"kugou_search:{query}"
-        cached = cache_get(cache_key)
-        if cached:
-            log(f"    [酷狗搜索] 缓存命中: '{query}'")
-            return cached
-        params = {
-            "keyword": query,
-            "page": 1,
-            "pagesize": 10,
-            "format": "json"
-        }
-        
-        try:
-            resp = requests.get(self.SEARCH_URL, params=params, timeout=10)
-            data = resp.json()
-            
-            songs = data.get("data", {}).get("info", [])
-            if not songs:
-                return None
-            
-            song = songs[0]
-            result = {
-                "id": song.get("hash"),
-                "title": song.get("songname"),
-                "artist": song.get("singername", ""),
-                "album": song.get("album_name", ""),
-                "duration": song.get("duration", 0) * 1000
-            }
-            cache_set(cache_key, result)
-            return result
-        except Exception as e:
-            log(f"    [酷狗搜索] 失败: {e}")
-            return None
-    
-    def get_lyrics(self, song_hash: str) -> Optional[List[Tuple[int, str, List]]]:
-        """获取歌词 - 使用酷狗歌词 API"""
-        try:
-            # 使用酷狗公开的歌词 API
-            url = "http://krcs.kugou.com/search"
-            params = {
-                "ver": 1,
-                "man": "yes",
-                "client": "mobi",
-                "hash": song_hash
-            }
-            
-            resp = requests.get(url, params=params, timeout=10)
-            data = resp.json()
-            
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return None
-            
-            candidate = candidates[0]
-            access_key = candidate.get("accesskey")
-            lyric_id = candidate.get("id")
-            
-            if not access_key or not lyric_id:
-                return None
-            
-            # 下载歌词
-            download_url = "http://krcs.kugou.com/download"
-            params = {
-                "ver": 1,
-                "id": lyric_id,
-                "accesskey": access_key,
-                "fmt": "krc"
-            }
-            
-            resp = requests.get(download_url, params=params, timeout=10)
-            krc_data = resp.content
-            
-            # 解密 KRC
-            return self._parse_krc(krc_data)
-            
-        except Exception as e:
-            log(f"    [酷狗歌词] 失败: {e}")
-            return None
-    
-    def _parse_krc(self, krc_data: bytes) -> Optional[List[Tuple[int, str, List]]]:
-        """解析 KRC 加密歌词"""
-        try:
-            # 检查文件头
-            if len(krc_data) < 4 or krc_data[:4] != b'krc1':
-                # 尝试直接作为文本解析
-                try:
-                    text = krc_data.decode('utf-8')
-                    return self._parse_lrc(text)
-                except:
-                    return None
-            
-            # 密钥
-            key = [0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x76, 0x48]
-            
-            # 解密
-            encrypted = krc_data[4:]
-            decrypted = bytearray()
-            for i, b in enumerate(encrypted):
-                decrypted.append(b ^ key[i % len(key)])
-            
-            # 解压
-            decompressed = zlib.decompress(decrypted)
-            json_str = decompressed.decode("utf-8")
-            
-            data = json.loads(json_str)
-            
-            # 解析歌词
-            lines = []
-            for item in data.get("content", []):
-                time_ms = int(item.get("time", 0))
-                text = item.get("line", "").strip()
-                
-                if not text:
-                    continue
-                
-                # 解析逐字时间
-                word_timings = []
-                for word in item.get("words", []):
-                    char_start = int(word.get("start", 0))
-                    char_duration = int(word.get("duration", 0))
-                    char_text = word.get("word", "")
-                    if char_text:
-                        word_timings.append((char_start, char_duration, char_text))
-                
-                lines.append((time_ms, text, word_timings))
-            
-            lines.sort(key=lambda x: x[0])
-            return lines
-            
-        except Exception as e:
-            log(f"    [KRC解析] 失败: {e}")
-            return None
-    
-    def _parse_lrc(self, lrc_text: str) -> List[Tuple[int, str, List]]:
-        """解析 LRC 歌词"""
-        lines = []
-        for line in lrc_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            
-            matches = re.findall(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
-            for mm, ss, ms, text in matches:
-                time_ms = int(mm) * 60000 + int(ss) * 1000
-                if len(ms) == 2:
-                    time_ms += int(ms) * 10
-                else:
-                    time_ms += int(ms)
-                
-                text = text.strip()
-                if text:
-                    lines.append((time_ms, text, []))
-        
-        lines.sort(key=lambda x: x[0])
-        return lines
-
-
-class NeteaseAPI(LyricsSource):
-    """网易云音乐 API - 支持 LRC + 翻译"""
-    
-    SEARCH_URL = "https://music.163.com/api/search/get/"
-    LYRIC_URL = "https://music.163.com/api/song/lyric"
-    
-    HEADERS = {
-        "Referer": "https://music.163.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
-    
-    def search(self, title: str, artist: str = "", album: str = "") -> Optional[Dict]:
-        """搜索歌曲，尝试找到最佳匹配"""
-        query = f"{title} {artist}".strip()
-        # 检查搜索缓存
-        cache_key = f"netease_search:{query}"
-        cached = cache_get(cache_key)
-        if cached:
-            log(f"    [网易搜索] 缓存命中: '{query}'")
-            return cached
-        log(f"    [网易搜索] query='{query}'")
-        params = {
-            "s": query,
-            "type": 1,
-            "limit": 20,
-            "offset": 0
-        }
-        
-        try:
-            resp = requests.post(self.SEARCH_URL, data=params, headers=self.HEADERS, timeout=10)
-            data = resp.json()
-            
-            songs = data.get("result", {}).get("songs", [])
-            if not songs:
-                log(f"    [网易搜索] 无结果")
-                return None
-
-            # 打印前3个搜索结果
-            for i, song in enumerate(songs[:3]):
-                s_title = song.get("name", "")
-                s_artist = song.get("artists", [{}])[0].get("name", "") if song.get("artists") else ""
-                log(f"    [网易搜索] 结果{i+1}: {s_title} - {s_artist}")
-
-            # 尝试找到最佳匹配 — 打分制
-            title_lower = title.lower().replace(" ", "")
-            artist_lower = artist.lower().replace(" ", "") if artist else ""
-
-            best_match = None
-            best_score = -1
-
-            for song in songs:
-                song_title = song.get("name", "").lower().replace(" ", "")
-                song_artist = song.get("artists", [{}])[0].get("name", "").lower().replace(" ", "") if song.get("artists") else ""
-
-                # 跳过翻唱、cover、remix等版本
-                skip_keywords = ['cover', 'remix', '翻唱', '改编', '版本', 'ver.', 'live']
-                song_name = song.get("name", "").lower()
-                if any(kw in song_name for kw in skip_keywords):
-                    continue
-
-                score = 0
-                clean_title = song_title.replace("-", "").replace("_", "").replace("~", "")
-                clean_target = title_lower.replace("-", "").replace("_", "").replace("~", "")
-
-                # 标题匹配打分
-                if clean_title == clean_target:
-                    score += 100  # 完全匹配
-                elif clean_title.startswith(clean_target) or clean_target.startswith(clean_title):
-                    score += 60   # 前缀匹配
-                elif title_lower in song_title or song_title in title_lower:
-                    score += 30   # 包含匹配
-                else:
-                    continue  # 标题都不匹配，跳过
-
-                # 艺术家匹配 — 用户指定了艺术家时，结果必须匹配
-                if artist_lower and song_artist:
-                    clean_artist = song_artist.replace("-", "").replace("_", "")
-                    clean_target_artist = artist_lower.replace("-", "").replace("_", "")
-                    if clean_artist == clean_target_artist:
-                        score += 50  # 艺术家完全匹配
-                    elif clean_target_artist in clean_artist or clean_artist in clean_target_artist:
-                        score += 30  # 艺术家部分匹配
-                    elif album:
-                        album_lower = album.lower().replace(" ", "")
-                        song_album = song.get("album", {}).get("name", "").lower().replace(" ", "")
-                        white_album_keywords = ['white album2', 'whitealbum2', 'white album', 'wa2']
-                        same_work = any(kw in album_lower.replace(" ", "") for kw in white_album_keywords) and \
-                                    any(kw in song_album for kw in white_album_keywords)
-                        if not same_work:
-                            continue  # 不同作品，跳过
-                    else:
-                        continue  # 艺术家不匹配且无专辑信息，跳过
-                elif artist_lower and not song_artist:
-                    continue  # 用户指定了艺术家但结果没有艺术家信息，跳过
-                elif not artist_lower:
-                    score += 25  # 没有艺术家信息，给基础分
-
-                # 专辑名匹配加分
-                if album:
-                    song_album = song.get("album", {}).get("name", "").lower()
-                    clean_album = album.lower().replace(" ", "")
-                    clean_song_album = song_album.replace(" ", "")
-                    if clean_album == clean_song_album:
-                        score += 80  # 专辑完全匹配
-                        log(f"    [网易匹配] 专辑匹配成功: {song.get('name')} - {song_artist}")
-                    elif clean_album in clean_song_album or clean_song_album in clean_album:
-                        score += 40  # 专辑包含
-
-                if score > best_score:
-                    best_score = score
-                    best_match = song
-                    log(f"    [网易匹配] 得分{score}: {song.get('name')} - {song_artist}")
-
-            if not best_match:
-                # 无匹配，使用第一个非翻唱歌曲
-                for song in songs:
-                    song_name = song.get("name", "").lower()
-                    skip_keywords = ['cover', 'remix', '翻唱', '改编', '版本', 'ver.', 'live']
-                    if not any(kw in song_name for kw in skip_keywords):
-                        best_match = song
-                        log(f"    [网易匹配] 默认选择: {song.get('name')} - {song.get('artists', [{}])[0].get('name', '')}")
-                        break
-                if not best_match:
-                    best_match = songs[0]
-
-            log(f"    [网易匹配] 最终选择(score={best_score}): {best_match.get('name')} - {best_match.get('artists', [{}])[0].get('name', '')}")
-
-            result = {
-                "id": str(best_match.get("id")),
-                "title": best_match.get("name"),
-                "artist": best_match.get("artists", [{}])[0].get("name", ""),
-                "album": best_match.get("album", {}).get("name", ""),
-                "duration": best_match.get("duration", 0)
-            }
-            cache_set(cache_key, result)
-            return result
-        except Exception as e:
-            log(f"    [网易云搜索] 失败: {e}")
-            return None
-    
-    def get_lyrics(self, song_info) -> Optional[List[Tuple[int, str, str, List]]]:
-        """获取歌词，返回 [(time_ms, text, translation, word_timings), ...]"""
-        song_id = song_info.get("id", "") if isinstance(song_info, dict) else song_info
-        try:
-            params = {
-                "id": song_id,
-                "lv": 1,
-                "kv": 1,
-                "tv": -1
-            }
-            
-            resp = requests.get(self.LYRIC_URL, params=params, headers=self.HEADERS, timeout=10)
-            data = resp.json()
-            
-            # 解析原文
-            lrc_text = data.get("lrc", {}).get("lyric", "")
-            if not lrc_text:
-                return None
-            
-            orig_lines = self._parse_lrc(lrc_text)
-            
-            # 解析翻译
-            trans_map = {}
-            tlyric = data.get("tlyric", {}).get("lyric", "")
-            if tlyric:
-                for time_ms, text, _ in self._parse_lrc(tlyric):
-                    trans_map[time_ms] = text
-            
-            # 合并
-            result = []
-            for time_ms, text, _ in orig_lines:
-                trans = trans_map.get(time_ms, "")
-                result.append((time_ms, text, trans, []))
-            
-            return result
-            
-        except Exception as e:
-            log(f"    [网易云歌词] 失败: {e}")
-            return None
-    
-    def _parse_lrc(self, lrc_text: str) -> List[Tuple[int, str, List]]:
-        """解析 LRC 歌词"""
-        lines = []
-        for line in lrc_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            
-            matches = re.findall(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
-            for mm, ss, ms, text in matches:
-                time_ms = int(mm) * 60000 + int(ss) * 1000
-                if len(ms) == 2:
-                    time_ms += int(ms) * 10
-                else:
-                    time_ms += int(ms)
-                
-                text = text.strip()
-                if text:
-                    lines.append((time_ms, text, []))
-        
-        lines.sort(key=lambda x: x[0])
-        return lines
-
-
-class LrclibAPI(LyricsSource):
-    """Lrclib 开源歌词库 API"""
-    
-    BASE_URL = "https://lrclib.net/api"
-    
-    def __init__(self):
-        self._lyrics_cache = {}  # 缓存歌词数据
-
-    def search(self, title: str, artist: str = "", album: str = "") -> Optional[Dict]:
-        """搜索歌曲"""
-        params = {
-            "track_name": title
-        }
-        if artist:
-            params["artist_name"] = artist
-        
-        try:
-            resp = requests.get(f"{self.BASE_URL}/search", params=params, timeout=10)
-            if resp.status_code != 200:
-                return None
-            
-            results = resp.json()
-            if not results:
-                return None
-            
-            song = results[0]
-            song_id = song.get("id")
-            
-            # 缓存歌词数据
-            self._lyrics_cache[str(song_id)] = {
-                "syncedLyrics": song.get("syncedLyrics", ""),
-                "plainLyrics": song.get("plainLyrics", "")
-            }
-            
-            return {
-                "id": song_id,
-                "title": song.get("trackName"),
-                "artist": song.get("artistName", ""),
-                "album": song.get("albumName", ""),
-                "duration": song.get("duration", 0) * 1000
-            }
-        except Exception as e:
-            log(f"    [Lrclib搜索] 失败: {e}")
-            return None
-    
-    def get_lyrics(self, song_info) -> Optional[List[Tuple[int, str, str, List]]]:
-        """获取歌词"""
-        song_id = song_info.get("id", "") if isinstance(song_info, dict) else song_info
-        try:
-            # 优先从缓存获取
-            cached = self._lyrics_cache.get(str(song_id))
-            if cached:
-                synced = cached.get("syncedLyrics", "")
-                if synced:
-                    return self._parse_lrc(synced)
-                plain = cached.get("plainLyrics", "")
-                if plain:
-                    return [(0, line, "", []) for line in plain.splitlines() if line.strip()]
-            
-            # 缓存未命中，尝试API获取
-            resp = requests.get(f"{self.BASE_URL}/songs/{song_id}", timeout=10)
-            if resp.status_code != 200:
-                return None
-            
-            data = resp.json()
-            
-            # 优先使用逐字同步歌词
-            synced = data.get("syncedLyrics", "")
-            if synced:
-                return self._parse_lrc(synced)
-            
-            # 回退到纯文本
-            plain = data.get("plainLyrics", "")
-            if plain:
-                return [(0, line, "", []) for line in plain.splitlines() if line.strip()]
-            
-            return None
-            
-        except Exception as e:
-            log(f"    [Lrclib歌词] 失败: {e}")
-            return None
-    
-    def _parse_lrc(self, lrc_text: str) -> List[Tuple[int, str, str, List]]:
-        """解析 LRC 歌词，返回 [(time_ms, text, translation, word_timings), ...]"""
-        lines = []
-        for line in lrc_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            
-            # 解析时间标签 [mm:ss.xx]
-            matches = re.findall(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
-            for mm, ss, ms, text in matches:
-                time_ms = int(mm) * 60000 + int(ss) * 1000
-                if len(ms) == 2:
-                    time_ms += int(ms) * 10
-                else:
-                    time_ms += int(ms)
-                
-                text = text.strip()
-                if text:
-                    lines.append((time_ms, text, "", []))
-        
         lines.sort(key=lambda x: x[0])
         return lines
 
 
 class LyricsProvider:
-    """歌词提供器 - 整合多个数据源"""
-    
+    """歌词提供器 - 仅 QQ 音乐"""
+
     def __init__(self):
-        self.sources = {
-            "qq": QQMusicAPI(),
-            "kugou": KugouAPI(),
-            "netease": NeteaseAPI(),
-            "lrclib": LrclibAPI()
-        }
-        self.source_priority = ["netease", "qq", "lrclib", "kugou"]
-    
-    def _fetch_one_source(self, source_name, title, artist, album, results, lock):
-        """从单个源获取歌词，结果写入 results 字典"""
-        source = self.sources[source_name]
-        try:
-            song_info = source.search(title, artist, album)
-            if not song_info:
-                with lock:
-                    results[source_name] = None
-                return
-
-            log(f"     [{source_name}] 找到: {song_info.get('title')} - {song_info.get('artist')}")
-
-            if source_name == "kugou":
-                lyrics = source.get_lyrics(song_info["id"])
-            else:
-                lyrics = source.get_lyrics(song_info)
-
-            with lock:
-                results[source_name] = lyrics
-        except Exception as e:
-            log(f"     [{source_name}] 异常: {e}")
-            with lock:
-                results[source_name] = None
-
-    def _score_lyrics(self, source_name, lyrics):
-        """给歌词打分，分数越高越好
-        评分标准:
-          - 有逐字时间(word_timings): +1000 (最高优先级)
-          - 歌词行数: 每行 +1
-          - 有翻译: +10
-          - 来源质量加成: QQ QRC=+200, Kugou KRC=+150
-        """
-        if not lyrics or len(lyrics) == 0:
-            return 0, source_name, lyrics
-
-        score = 0
-
-        # 检查是否有逐字时间戳
-        has_word_timing = False
-        has_translation = False
-        for item in lyrics:
-            word_timings = item[3] if len(item) > 3 else []
-            if word_timings and len(word_timings) > 0:
-                has_word_timing = True
-            trans = item[2] if len(item) > 2 else ""
-            if trans:
-                has_translation = True
-
-        # 逐字时间戳是大加分
-        if has_word_timing:
-            score += 1000
-            # 来源质量加成
-            if source_name == "qq":
-                score += 200  # QQ QRC 质量最高
-            elif source_name == "kugou":
-                score += 150  # Kugou KRC
-
-        # 翻译加分
-        if has_translation:
-            score += 10
-
-        # 歌词行数
-        score += len(lyrics)
-
-        return score, source_name, lyrics
+        self.qq = QQMusicAPI()
 
     def get_lyrics(self, title: str, artist: str = "", album: str = "") -> Optional[List[Tuple]]:
-        """
-        获取歌词，同时查询多个数据源，选时间戳最完整的
+        """获取歌词
         返回: [(time_ms, text, translation, word_timings), ...]
         """
-        # 检查歌词缓存
         cache_key = f"lyrics:{title}:{artist}:{album}"
         cached = cache_get(cache_key)
         if cached is not None:
             log(f"\n[LyricsProvider] 缓存命中: {artist} - {title}")
-            # cached 可能是 list 或 None 标记
             if cached == "__NONE__":
                 return None
             return cached
 
-        log(f"\n[LyricsProvider] 搜索: {artist} - {title}" + (f" (专辑: {album})" if album else ""))
+        log(f"\n[LyricsProvider] QQ音乐搜索: {artist} - {title}" + (f" (专辑: {album})" if album else ""))
 
-        results = {}
-        lock = threading.Lock()
-        threads = []
-
-        # 并发查询所有源
-        for source_name in self.source_priority:
-            log(f"  >> 并行查询 {source_name}...")
-            t = threading.Thread(
-                target=self._fetch_one_source,
-                args=(source_name, title, artist, album, results, lock),
-                daemon=True
-            )
-            t.start()
-            threads.append(t)
-
-        # 等待所有线程完成（最多 30 秒）
-        for t in threads:
-            t.join(timeout=30)
-
-        # 收集所有成功的结果并打分
-        scored = []
-        for source_name in self.source_priority:
-            lyrics = results.get(source_name)
-            if lyrics and len(lyrics) > 0:
-                score, sname, slyrics = self._score_lyrics(source_name, lyrics)
-                log(f"     [{source_name}] 得分={score}: {len(lyrics)}行"
-                    + (" [逐字]" if any(len(item[3]) > 3 and item[3] for item in lyrics[:1]) else "")
-                    + (" [翻译]" if any(len(item) > 2 and item[2] for item in lyrics[:1]) else ""))
-                scored.append((score, sname, slyrics))
-
-        if not scored:
-            log("  [x] 所有数据源都未找到歌词")
+        song_info = self.qq.search(title, artist, album)
+        if not song_info:
+            log("  [x] 未找到匹配的歌曲")
             cache_set(cache_key, "__NONE__")
             return None
 
-        # 选最高分的
-        scored.sort(key=lambda x: x[0], reverse=True)
-        best_score, best_name, best_lyrics = scored[0]
-        log(f"  >> 选择 {best_name} (得分={best_score})")
-        cache_set(cache_key, best_lyrics)
-        return best_lyrics
-    
+        log(f"     找到: {song_info.get('title')} - {song_info.get('artist')}")
+        lyrics = self.qq.get_lyrics(song_info)
+
+        if not lyrics:
+            log("  [x] 未获取到歌词")
+            cache_set(cache_key, "__NONE__")
+            return None
+
+        has_trans = sum(1 for item in lyrics if len(item) > 2 and item[2])
+        has_word = sum(1 for item in lyrics if len(item) > 3 and item[3])
+        log(f"  >> 获取成功: {len(lyrics)} 行"
+            + (" [逐字]" if has_word > 0 else "")
+            + (" [翻译]" if has_trans > 0 else ""))
+        cache_set(cache_key, lyrics)
+        return lyrics
+
     def get_lyrics_with_word_timing(self, title: str, artist: str = "") -> Optional[List[Tuple[int, str, List]]]:
-        """
-        获取带逐字时间戳的歌词
-        优先返回 QRC/KRC 格式的逐字歌词
-        返回: [(time_ms, text, [(char_start, char_duration, char), ...]), ...]
-        """
+        """获取带逐字时间戳的歌词"""
         lyrics = self.get_lyrics(title, artist)
         if not lyrics:
             return None
-        
-        # 检查是否有逐字时间戳
         result = []
         for item in lyrics:
             if len(item) >= 4:
-                # 格式: (time_ms, text, translation, word_timings)
                 time_ms, text, trans, word_timings = item
                 result.append((time_ms, text, word_timings))
             elif len(item) == 3:
-                # 格式: (time_ms, text, word_timings)
                 result.append(item)
             else:
-                # 格式: (time_ms, text)
                 result.append((item[0], item[1], []))
-        
         return result
 
 
@@ -1539,15 +881,14 @@ def get_lyrics_with_word_timing(title: str, artist: str = "") -> Optional[List[T
 
 
 if __name__ == "__main__":
-    # 测试
     test_cases = [
         ("晴天", "周杰伦"),
         ("告白气球", "周杰伦"),
         ("BLUE", "Billie Eilish"),
     ]
-    
+
     provider = LyricsProvider()
-    
+
     for title, artist in test_cases:
         log("\n" + "="*50)
         lyrics = provider.get_lyrics(title, artist)
