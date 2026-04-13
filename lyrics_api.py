@@ -13,26 +13,8 @@ import requests
 from typing import List, Tuple, Optional, Dict
 from urllib.parse import quote
 
-# 日志输出到文件
-import threading
-_log_lock = threading.Lock()
-_log_file = None
-
-def _init_lyrics_log():
-    global _log_file
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taskbar_lyrics.log')
-    _log_file = open(path, 'a', encoding='utf-8')
-
-def log(msg):
-    global _log_file
-    if _log_file is None:
-        _init_lyrics_log()
-    with _log_lock:
-        if _log_file:
-            try:
-                _log_file.write(msg + '\n')
-                _log_file.flush()
-            except: pass
+from src.utils.log import log
+from src.lyrics.parsers import parse_qrc, parse_lrc
 
 
 # ============================================================

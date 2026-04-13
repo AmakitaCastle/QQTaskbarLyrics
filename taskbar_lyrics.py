@@ -12,34 +12,7 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# 日志同时输出到文件和控制台（解决后台线程 print 丢失问题）
-import os, threading, datetime
-_log_lock = threading.Lock()
-_log_file = None
-
-def _init_log():
-    global _log_file
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taskbar_lyrics.log')
-    _log_file = open(path, 'w', encoding='utf-8')
-    # 同时初始化 lyrics_api 的日志
-    try:
-        from lyrics_api import _init_lyrics_log
-        _init_lyrics_log()
-    except: pass
-
-def log(msg):
-    ts = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
-    line = f"[{ts}] {msg}"
-    # 终端输出
-    try: print(line, flush=True)
-    except: pass
-    # 文件输出
-    with _log_lock:
-        if _log_file:
-            try:
-                _log_file.write(line + '\n')
-                _log_file.flush()
-            except: pass
+from src.utils.log import log, _init_log
 
 import asyncio, ctypes, json, re, threading, time, bisect
 import tkinter as tk
