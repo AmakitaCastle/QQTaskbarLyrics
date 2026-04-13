@@ -501,6 +501,9 @@ class TaskbarLyricsWindow:
     # ===========================================================
 
     def update_display(self, orig: str, trans: str, progress: float):
+        # // 是 QQ 音乐日文歌词的翻译分隔线，视为无效
+        if trans in ("", "//"):
+            trans = ""
         display = trans if trans else (orig or "♪ 等待播放 ♪")
 
         if display != self._text:
