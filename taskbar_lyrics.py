@@ -376,23 +376,27 @@ class TaskbarLyricsWindow:
         self.root.bind("<FocusOut>",lambda e:self._restore_topmost())
 
     def _show_menu(self, event):
-        """弹出右键菜单，显示在任务栏上方"""
+        """弹出右键菜单，贴在歌词窗口上方"""
         import ctypes
         try:
             spi = ctypes.windll.user32.SystemParametersInfoW
             work_area = ctypes.c_int * 4
             wa = work_area()
             spi(0x0030, 0, wa, 0)
-            screen_bottom = wa[3]
+            screen_top = wa[1]
         except:
-            screen_bottom = self.root.winfo_screenheight()
+            screen_top = 0
 
         menu_h = self.menu.winfo_reqheight()
+        win_x = self.root.winfo_rootx()
+        win_y = self.root.winfo_rooty()
 
-        # 菜单显示在任务栏上方
-        x = event.x_root
-        y = screen_bottom - menu_h
-        self.menu.post(x, y)
+        # 菜单底部贴着窗口顶部
+        y = win_y - menu_h
+        if y < screen_top:
+            # 上方不够，改为贴在窗口下方
+            y = win_y
+        self.menu.post(win_x, y)
 
     # ---- 窗口保护 ----
     def _hwnd(self):
