@@ -28,40 +28,7 @@ def save_config(config: dict):
         pass
 
 
-def show_offset_config(parent, config, colors, fonts, save_fn):
-    win = tk.Toplevel(parent)
-    win.title("歌词偏移")
-    win.geometry("360x140")
-    win.configure(bg="#2a2a3e")
-    win.transient(parent)
-    win.grab_set()
-
-    f = tk.Frame(win, bg="#2a2a3e")
-    f.pack(fill=tk.X, padx=20, pady=12)
-    tk.Label(f, text="偏移(ms)", fg="#FFF", bg="#2a2a3e",
-             font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
-
-    vs = tk.IntVar(value=config.get("lyric_offset_ms", 200))
-    tk.Spinbox(f, from_=-2000, to=2000, textvariable=vs, width=6,
-               font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
-    tk.Label(f, text="(正数=歌词提前，负数=歌词推后)", fg="#aaa", bg="#2a2a3e",
-             font=("Microsoft YaHei UI", 9)).pack(side=tk.LEFT, padx=4)
-
-    bf = tk.Frame(win, bg="#2a2a3e")
-    bf.pack(fill=tk.X, padx=20, pady=10)
-
-    def apply():
-        config["lyric_offset_ms"] = vs.get()
-        save_fn()
-        win.destroy()
-
-    tk.Button(bf, text="应用", command=apply, bg="#4a4a6e", fg="#FFF",
-              width=10).pack(side=tk.LEFT)
-    tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
-              width=10).pack(side=tk.RIGHT)
-
-
-def show_color_config(parent, config, colors, fonts, save_fn, root, canvas):
+def show_color_config(parent, colors, save_fn, root, canvas):
     win = tk.Toplevel(parent)
     win.title("颜色")
     win.geometry("380x280")
@@ -99,7 +66,45 @@ def show_color_config(parent, config, colors, fonts, save_fn, root, canvas):
               width=10).pack(side=tk.RIGHT)
 
 
-def show_font_config(parent, config, colors, fonts, save_fn, karaoke_engine):
+def show_font_config(parent, fonts, save_fn, karaoke_engine):
+    win = tk.Toplevel(parent)
+    win.title("颜色")
+    win.geometry("380x280")
+    win.configure(bg="#2a2a3e")
+    win.transient(parent)
+    win.grab_set()
+
+    cv = {}
+    for lb, k in [("背景色", "bg"), ("已唱(高亮)", "sung"), ("未唱(暗色)", "unsung")]:
+        f = tk.Frame(win, bg="#2a2a3e")
+        f.pack(fill=tk.X, padx=20, pady=6)
+        tk.Label(f, text=lb, fg="#FFF", bg="#2a2a3e",
+                 font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
+        v = tk.StringVar(value=colors.get(k, "#666"))
+        cv[k] = v
+        tk.Entry(f, textvariable=v, width=9, font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
+        pv = tk.Label(f, text="  ", bg=colors.get(k, "#666"), width=3, relief=tk.RIDGE)
+        pv.pack(side=tk.LEFT)
+        v.trace_add("write", lambda *a, p=pv, vv=v: p.config(bg=vv.get()))
+
+    bf = tk.Frame(win, bg="#2a2a3e")
+    bf.pack(fill=tk.X, padx=20, pady=12)
+
+    def apply():
+        for k, v in cv.items():
+            colors[k] = v.get()
+        root.configure(bg=colors["bg"])
+        canvas.configure(bg=colors["bg"])
+        save_fn()
+        win.destroy()
+
+    tk.Button(bf, text="应用", command=apply, bg="#4a4a6e", fg="#FFF",
+              width=10).pack(side=tk.LEFT)
+    tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
+              width=10).pack(side=tk.RIGHT)
+
+
+def show_font_config(parent, fonts, save_fn, karaoke_engine):
     win = tk.Toplevel(parent)
     win.title("字体")
     win.geometry("420x160")

@@ -40,8 +40,7 @@ class TaskbarLyricsApp:
         try:
             info = self.media.get_info()
             title, artist, album = info["title"], info["artist"], info.get("album", "")
-            pos_raw = info["position_ms"]
-            pos = pos_raw - self.window._lyric_offset_ms
+            pos = info["position_ms"]
             key = f"{artist}|{title}"
             if key != self._last_song:
                 self._last_song = key
@@ -53,14 +52,11 @@ class TaskbarLyricsApp:
                     self._loading = False
             if title:
                 if self._loading:
-                    self.window.update_debug_info(pos_raw, pos, "loading...", 0.0)
                     self.window.karaoke.update_display("♪ 正在加载歌词...", "", 0.0)
                 elif self._ly:
                     o, t, p = self.lyrics.get_current_line(self._ly, pos)
-                    self.window.update_debug_info(pos_raw, pos, o, p)
                     self.window.karaoke.update_display(o, t, p)
                 else:
-                    self.window.update_debug_info(pos_raw, pos, "no lyrics", 0.0)
                     self.window.karaoke.update_display("♪ 暂无歌词 ♪", "", 0.0)
             else:
                 self.window.karaoke.update_display("♪ 等待播放...", "", 0.0)
@@ -73,7 +69,7 @@ class TaskbarLyricsApp:
         log("=" * 50)
         log("  Windows 任务栏歌词 — 模块化架构")
         log("=" * 50)
-        log("  左键拖拽 | 右键菜单 | 上下箭头调偏移 | 右键菜单开调试")
+        log("  左键拖拽 | 右键菜单")
         log("")
         self.media.start()
         self.window.root.after(500, self._tick)

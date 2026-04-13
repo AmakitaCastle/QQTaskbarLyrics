@@ -5,12 +5,10 @@
 import ctypes
 import tkinter as tk
 from tkinter import font as tkfont
-from pathlib import Path
 
-from src.display.config import load_config, save_config, CONFIG_FILE
+from src.display.config import load_config, save_config
 from src.display.karaoke import KaraokeEngine
-from src.display.config import show_offset_config, show_color_config, show_font_config
-from src.utils.log import log
+from src.display.config import show_color_config, show_font_config
 
 
 class TaskbarLyricsWindow:
@@ -33,7 +31,7 @@ class TaskbarLyricsWindow:
         self._fonts = self._config.get("fonts", self.DEFAULT_FONTS.copy())
 
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        ww, wh = min(900, sw - 200), 30
+        ww, wh = min(900, sw - 200), 42
         pos = self._config.get("position", {})
         x = max(0, min(pos.get("x", (sw - ww) // 2), sw - ww))
         y = max(0, min(pos.get("y", sh - wh - 50), sh - wh))
@@ -50,7 +48,7 @@ class TaskbarLyricsWindow:
                                 height=wh, highlightthickness=0, bd=0)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=12)
 
-        # Karaoke engine (replaces inline _rebuild/_paint/_lerp_color)
+        # Karaoke engine
         self.karaoke = KaraokeEngine(self.canvas, self._colors, self._fonts)
 
         # 拖拽
@@ -58,27 +56,17 @@ class TaskbarLyricsWindow:
         self.canvas.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
         self.canvas.bind("<B1-Motion>", self._drag_move)
 
-        # 右键菜单
+        # 右键菜单 — 只保留：穿透、颜色、字体、退出
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="鼠标穿透 开/关", command=self._toggle_ct)
         self.menu.add_separator()
-        self.menu.add_command(label="调试信息 开/关", command=self._toggle_debug)
-        self.menu.add_command(label="歌词偏移 设置", command=self._offset_cfg)
         self.menu.add_command(label="颜色设置", command=self._color_cfg)
         self.menu.add_command(label="字体设置", command=self._font_cfg)
         self.menu.add_separator()
         self.menu.add_command(label="退出", command=self._quit)
         self.root.bind("<Button-3>", self._show_menu)
         self._ct = False
-        self._debug_mode = False
-        self._debug_label = None
-        self._lyric_offset_ms = self._config.get("lyric_offset_ms", 200)
 
-        # 键盘快捷键
-        self.root.bind("<Up>", lambda e: self._nudge_offset(50))
-        self.root.bind("<Down>", lambda e: self._nudge_offset(-50))
-        self.root.bind("<Shift-Up>", lambda e: self._nudge_offset(10))
-        self.root.bind("<Shift-Down>", lambda e: self._nudge_offset(-10))
         self.root.bind("<Configure>", self._on_move)
         self.root.bind("<FocusOut>", lambda e: self._restore_topmost())
 
@@ -175,49 +163,19 @@ class TaskbarLyricsWindow:
         except:
             pass
 
-    def _toggle_debug(self):
-        self._debug_mode = not self._debug_mode
-        if self._debug_mode:
-            if not self._debug_label:
-                self._debug_label = self.canvas.create_text(
-                    10, 4, text="", fill="#00ff00",
-                    font=("Consolas", 9), anchor="nw")
-        else:
-            if self._debug_label:
-                self.canvas.delete(self._debug_label)
-                self._debug_label = None
-
-    def update_debug_info(self, pos_raw, pos_adj, line_text, progress):
-        if self._debug_mode and self._debug_label:
-            self.canvas.itemconfig(self._debug_label,
-                                   text=f"pos={pos_raw}ms adj={pos_adj}ms offset={self._lyric_offset_ms}ms p={progress:.0%}")
-
-    def _nudge_offset(self, delta):
-        self._lyric_offset_ms += delta
-        self._config["lyric_offset_ms"] = self._lyric_offset_ms
-        self._save_config()
-        log(f"[Offset] {self._lyric_offset_ms}ms ({'+' if delta > 0 else ''}{delta})")
-
     def _quit(self):
         self.root.quit()
         self.root.destroy()
 
-    def _offset_cfg(self):
-        show_offset_config(self.root, self._config, self._colors, self._fonts,
-                           self._save_config)
-
     def _color_cfg(self):
-        show_color_config(self.root, self._config, self._colors, self._fonts,
-                          self._save_config, self.root, self.canvas)
+        show_color_config(self.root, self._colors, self._save_config, self.root, self.canvas)
 
     def _font_cfg(self):
-        show_font_config(self.root, self._config, self._colors, self._fonts,
-                         self._save_config, self.karaoke)
+        show_font_config(self.root, self._fonts, self._save_config, self.karaoke)
 
     def _save_config(self):
         self._config["colors"] = self._colors
         self._config["fonts"] = self._fonts
-        self._config["lyric_offset_ms"] = self._lyric_offset_ms
         save_config(self._config)
 
     def update_display(self, orig: str, trans: str, progress: float):
