@@ -5,7 +5,6 @@ QQ 音乐歌词 API 模块
 
 import re
 import json
-import zlib
 import base64
 import time
 import os
@@ -14,7 +13,9 @@ from typing import List, Tuple, Optional, Dict
 from urllib.parse import quote
 
 from src.utils.log import log
+from src.utils.crypto import _qrc_cloud_decrypt, _qmc1_decrypt, _qrc_local_decrypt
 from src.lyrics.parsers import parse_qrc, parse_lrc
+from src.lyrics.cache import cache_get, cache_set, cache_clean
 
 
 # ============================================================
@@ -190,145 +191,6 @@ _QMC1_PRIVKEY = (
     0xc3, 0x00, 0x09, 0x5b, 0x9f, 0x62, 0x66, 0xa1,
     0xd8, 0x52, 0xf7, 0x67, 0x90, 0xca, 0xd6, 0x4a,
 )
-
-
-_QRC_CONTENT_PATTERN = re.compile(
-    r'<Lyric_1 LyricType="1" LyricContent="(?P<content>.*?)"/>',
-    re.DOTALL
-)
-_QRC_LINE_PATTERN = re.compile(r"^\[(\d+),(\d+)\](.*)$")
-_QRC_WORD_PATTERN = re.compile(
-    r"(?:\[\d+,\d+\])?(?P<content>(?:(?!\(\d+,\d+\)).)*)\((?P<start>\d+),(?P<duration>\d+)\)"
-)
-
-
-def _parse_qrc(qrc_text: str) -> List[Tuple[int, str, List]]:
-    """解析 QRC 逐字歌词"""
-    match = _QRC_CONTENT_PATTERN.search(qrc_text)
-    if not match:
-        return _parse_lrc_fallback(qrc_text)
-
-    result = []
-    content = match.group("content")
-
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        line_match = _QRC_LINE_PATTERN.match(line)
-        if not line_match:
-            continue
-
-        line_start = int(line_match.group(1))
-        line_content = line_match.group(3)
-
-        words = []
-        text_parts = []
-        for wm in _QRC_WORD_PATTERN.finditer(line_content):
-            char_text = wm.group("content")
-            if char_text and char_text != "\r":
-                char_start = int(wm.group("start")) - line_start
-                char_duration = int(wm.group("duration"))
-                words.append((char_start, char_duration, char_text))
-                text_parts.append(char_text)
-
-        if not text_parts:
-            continue
-
-        full_text = "".join(text_parts)
-        result.append((line_start, full_text, words))
-
-    result.sort(key=lambda x: x[0])
-    return result
-
-
-def _parse_lrc_fallback(lrc_text: str) -> List[Tuple[int, str, List]]:
-    """LRC 格式解析（QRC 解析失败时的回退）"""
-    lines = []
-    for line in lrc_text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        matches = re.findall(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
-        for mm, ss, ms, text in matches:
-            time_ms = int(mm) * 60000 + int(ss) * 1000
-            if len(ms) == 2:
-                time_ms += int(ms) * 10
-            else:
-                time_ms += int(ms)
-            text = text.strip()
-            if text:
-                lines.append((time_ms, text, []))
-    lines.sort(key=lambda x: x[0])
-    return lines
-
-
-# ============================================================
-# 本地缓存模块
-# ============================================================
-
-_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.lyrics_cache')
-_CACHE_FILE = os.path.join(_CACHE_DIR, 'cache.json')
-_cache_lock = threading.Lock()
-_cache_data = None
-
-def _load_cache():
-    global _cache_data
-    if _cache_data is not None:
-        return
-    with _cache_lock:
-        if _cache_data is not None:
-            return
-        try:
-            if os.path.exists(_CACHE_FILE):
-                with open(_CACHE_FILE, 'r', encoding='utf-8') as f:
-                    _cache_data = json.load(f)
-            else:
-                _cache_data = {}
-        except Exception as e:
-            log(f"    [缓存] 加载失败: {e}")
-            _cache_data = {}
-
-def _save_cache():
-    global _cache_data
-    if _cache_data is None:
-        return
-    with _cache_lock:
-        try:
-            os.makedirs(_CACHE_DIR, exist_ok=True)
-            with open(_CACHE_FILE, 'w', encoding='utf-8') as f:
-                json.dump(_cache_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            log(f"    [缓存] 保存失败: {e}")
-
-def cache_get(key: str) -> Optional[dict]:
-    """获取缓存，过期返回 None"""
-    _load_cache()
-    entry = _cache_data.get(key)
-    if not entry:
-        return None
-    if time.time() - entry.get("ts", 0) > 86400:
-        del _cache_data[key]
-        _save_cache()
-        return None
-    return entry.get("data")
-
-def cache_set(key: str, data):
-    """写入缓存"""
-    _load_cache()
-    _cache_data[key] = {"data": data, "ts": time.time()}
-    _save_cache()
-
-def cache_clean():
-    """清理过期缓存"""
-    _load_cache()
-    now = time.time()
-    cleaned = 0
-    expired_keys = [k for k, v in _cache_data.items() if now - v.get("ts", 0) > 86400]
-    for k in expired_keys:
-        del _cache_data[k]
-        cleaned += 1
-    if cleaned > 0:
-        _save_cache()
-        log(f"    [缓存] 清理 {cleaned} 条过期记录")
 
 
 class QQMusicAPI:
@@ -638,7 +500,7 @@ class QQMusicAPI:
                     log(f"    [QQ音乐歌词] 所有解密方式均失败: {e2}")
                     return legacy_result
 
-            orig_lines = _parse_qrc(orig_text)
+            orig_lines = parse_qrc(orig_text)
             log(f"    [QQ音乐歌词] QRC 解析 {len(orig_lines)} 行")
 
             trans_map = {}
@@ -651,9 +513,9 @@ class QQMusicAPI:
                     trans_decrypted_text = trans_text
 
                     if '<Lyric_1' in trans_text[:200]:
-                        trans_parsed = _parse_qrc(trans_text)
+                        trans_parsed = parse_qrc(trans_text)
                     else:
-                        trans_parsed = _parse_lrc_fallback(trans_text)
+                        trans_parsed = parse_lrc(trans_text)
 
                     for time_ms, text, _ in trans_parsed:
                         trans_map[time_ms] = text
@@ -673,9 +535,9 @@ class QQMusicAPI:
                         trans_decrypted_text = trans_text
 
                         if '<Lyric_1' in trans_text[:200]:
-                            trans_parsed = _parse_qrc(trans_text)
+                            trans_parsed = parse_qrc(trans_text)
                         else:
-                            trans_parsed = _parse_lrc_fallback(trans_text)
+                            trans_parsed = parse_lrc(trans_text)
 
                         for time_ms, text, _ in trans_parsed:
                             trans_map[time_ms] = text
@@ -770,24 +632,8 @@ class QQMusicAPI:
             return None
 
     def _parse_lrc(self, lrc_text: str) -> List[Tuple[int, str, List]]:
-        """解析 LRC 歌词"""
-        lines = []
-        for line in lrc_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            matches = re.findall(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
-            for mm, ss, ms, text in matches:
-                time_ms = int(mm) * 60000 + int(ss) * 1000
-                if len(ms) == 2:
-                    time_ms += int(ms) * 10
-                else:
-                    time_ms += int(ms)
-                text = text.strip()
-                if text:
-                    lines.append((time_ms, text, []))
-        lines.sort(key=lambda x: x[0])
-        return lines
+        """解析 LRC 歌词 — 委托给模块级 parse_lrc"""
+        return parse_lrc(lrc_text)
 
 
 class LyricsProvider:
