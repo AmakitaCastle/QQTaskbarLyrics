@@ -316,10 +316,10 @@ class TaskbarLyricsWindow:
         self._fonts = self._config.get("fonts", self.DEFAULT_FONTS.copy())
 
         sw,sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        ww,wh = min(900,sw-200), 30
+        ww,wh = min(900,sw-500), 42
         pos=self._config.get("position",{})
         x=max(0,min(pos.get("x",(sw-ww)//2),sw-ww))
-        y=max(0,min(pos.get("y",sh-wh-50),sh-wh))
+        y=max(0,min(pos.get("y",sh-wh-200),sh-wh))
         self.root.geometry(f"{ww}x{wh}+{x}+{y}")
         self.root.overrideredirect(True)
         self.root.attributes("-topmost",True)
@@ -376,26 +376,22 @@ class TaskbarLyricsWindow:
         self.root.bind("<FocusOut>",lambda e:self._restore_topmost())
 
     def _show_menu(self, event):
-        """弹出右键菜单，贴在鼠标上方，不挡住歌词"""
+        """弹出右键菜单，显示在任务栏上方"""
         import ctypes
         try:
             spi = ctypes.windll.user32.SystemParametersInfoW
             work_area = ctypes.c_int * 4
             wa = work_area()
             spi(0x0030, 0, wa, 0)
-            screen_top = wa[1]
             screen_bottom = wa[3]
         except:
-            screen_top = 0
             screen_bottom = self.root.winfo_screenheight()
 
         menu_h = self.menu.winfo_reqheight()
 
-        x, y = event.x_root, event.y_root
-        # 菜单贴在鼠标上方
-        y = y - menu_h - 2
-        if y < screen_top:
-            y = screen_top
+        # 菜单显示在任务栏上方
+        x = event.x_root
+        y = screen_bottom - menu_h
         self.menu.post(x, y)
 
     # ---- 窗口保护 ----
