@@ -376,29 +376,26 @@ class TaskbarLyricsWindow:
         self.root.bind("<FocusOut>",lambda e:self._restore_topmost())
 
     def _show_menu(self, event):
-        """智能弹出右键菜单，避免被屏幕边缘截断"""
+        """弹出右键菜单，若底部空间不够则上移"""
         import ctypes
         try:
-            # 获取屏幕工作区高度（排除任务栏）
             spi = ctypes.windll.user32.SystemParametersInfoW
             work_area = ctypes.c_int * 4
             wa = work_area()
-            spi(0x0030, 0, wa, 0)  # SPI_GETWORKAREA
-            screen_bottom = wa[3]  # 工作区底部 y 坐标
+            spi(0x0030, 0, wa, 0)
+            screen_bottom = wa[3]
         except:
             screen_bottom = self.root.winfo_screenheight()
 
-        # 估算菜单高度（每项约 25px + 分隔符 10px）
-        menu_items = 7  # 7 个菜单项
-        sep_count = 2   # 2 个分隔符
-        est_height = menu_items * 25 + sep_count * 10
-
         x, y = event.x_root, event.y_root
-        # 如果下方空间不够，将菜单底部对齐到屏幕底部
-        if y + est_height > screen_bottom:
-            y = screen_bottom - est_height
-
+        # 先临时贴出菜单以获取实际高度
         self.menu.post(x, y)
+        self.menu.update()
+        actual_h = self.menu.winfo_height()
+        # 如果底部超出屏幕，上移
+        if y + actual_h > screen_bottom:
+            self.menu.unpost()
+            self.menu.post(x, screen_bottom - actual_h)
 
     # ---- 窗口保护 ----
     def _hwnd(self):
