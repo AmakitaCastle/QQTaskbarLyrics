@@ -63,7 +63,7 @@ class KaraokeEngine:
         self._total_px = cum[-1]
 
         # 垂直居中
-        canvas_h = self.canvas.winfo_height() or 42
+        canvas_h = self.canvas.winfo_height() or 32
         cy = canvas_h // 2
         col_sung = self.colors.get("sung", "#FFD700")
         col_unsung = self.colors.get("unsung", "#555566")

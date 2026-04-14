@@ -76,7 +76,7 @@ class TaskbarLyricsWindow:
         self.ctrl_group.pack(side=tk.LEFT, fill=tk.Y)
         self.ctrl_group.pack_propagate(False)
 
-        self._create_control_buttons(_actual_bg, wh)
+        self._create_control_buttons(wh)
 
         # 分隔线
         div_color = self._colors.get("divider", self.DEFAULT_COLORS["divider"])
@@ -152,7 +152,7 @@ class TaskbarLyricsWindow:
 
     # ---- 播放控制按钮 ----
 
-    def _create_control_buttons(self, bg_color: str, container_h: int):
+    def _create_control_buttons(self, container_h: int):
         """创建水平排列的 prev / play-pause / next 圆形按钮"""
         btn_size = 26
         btn_fg = "#ccccdd"
