@@ -12,11 +12,13 @@ from src.display.config import show_color_config, show_font_config
 
 
 class TaskbarLyricsWindow:
-    DEFAULT_COLORS = {"bg": "#1a1a2e", "sung": "#FFD700", "unsung": "#555566"}
+    DEFAULT_COLORS = {"bg": "#1a1a2e", "sung": "#FFD700", "unsung": "#555566",
+                      "btn": "#333348", "btn_hover": "#4a4a6e", "btn_text": "#ccccdd"}
     DEFAULT_FONTS = {"lyric": ("Microsoft YaHei UI", 14, "bold")}
     DEFAULT_SIZE = {"width": 900, "height": 42}
+    BUTTON_AREA_WIDTH = 75  # 左侧控制按钮区域宽度
 
-    def __init__(self):
+    def __init__(self, on_play_pause=None, on_next=None, on_prev=None):
         try:
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except:
@@ -30,6 +32,17 @@ class TaskbarLyricsWindow:
         self._config = load_config()
         self._colors = self._config.get("colors", self.DEFAULT_COLORS.copy())
         self._fonts = self._config.get("fonts", self.DEFAULT_FONTS.copy())
+        self._callbacks = {
+            "play_pause": on_play_pause,
+            "next": on_next,
+            "prev": on_prev,
+        }
+
+        # 播放控制按钮状态
+        self._playing = True  # 默认播放中
+        self._btn_prev = None
+        self._btn_play = None
+        self._btn_next = None
 
         # 透明模式：用一个极罕见颜色作为透明色
         self._TRANSPARENT_MAGIC = "#000001"
@@ -53,30 +66,28 @@ class TaskbarLyricsWindow:
         self.root.after(100, self._setup_style)
         self.root.after(500, self._ensure_topmost)
 
-        # ---- Canvas ----
+        # ---- 左侧控制按钮 + Canvas ----
+        self.btn_frame = tk.Frame(self.root, bg=_actual_bg,
+                                  width=self.BUTTON_AREA_WIDTH, height=wh)
+        self.btn_frame.pack(side=tk.LEFT, fill=tk.Y)
+        self.btn_frame.pack_propagate(False)
+
+        self._create_control_buttons(_actual_bg)
+
         self.canvas = tk.Canvas(self.root, bg=_actual_bg,
                                 height=wh, highlightthickness=0, bd=0)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=12)
 
-        # Karaoke engine
-        self.karaoke = KaraokeEngine(self.canvas, self._colors, self._fonts)
+        # Karaoke engine（传入按钮区宽度偏移）
+        self.karaoke = KaraokeEngine(
+            self.canvas, self._colors, self._fonts,
+            offset_x=self.BUTTON_AREA_WIDTH
+        )
 
         # 拖拽
         self._drag = {"x": 0, "y": 0}
         self.canvas.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
         self.canvas.bind("<B1-Motion>", self._drag_move)
-
-        # 右键菜单 — 只保留：穿透、颜色、字体、退出
-        self.menu = tk.Menu(self.root, tearoff=0)
-        self.menu.add_command(label="鼠标穿透 开/关 (Ctrl+T)", command=self._toggle_ct)
-        self.menu.add_separator()
-        self.menu.add_command(label="窗口大小", command=self._size_cfg)
-        self.menu.add_command(label="颜色设置", command=self._color_cfg)
-        self.menu.add_command(label="字体设置", command=self._font_cfg)
-        self.menu.add_separator()
-        self.menu.add_command(label="退出 (Esc)", command=self._quit)
-        self.root.bind("<Button-3>", self._show_menu)
-        self._ct = False
 
         # 键盘快捷键：Esc 退出，Ctrl+T 切换穿透
         self.root.bind("<Escape>", lambda e: self._quit())
@@ -85,26 +96,6 @@ class TaskbarLyricsWindow:
 
         self.root.bind("<Configure>", self._on_move)
         self.root.bind("<FocusOut>", lambda e: self._restore_topmost())
-
-    def _show_menu(self, event):
-        """弹出右键菜单，贴在鼠标上方，不挡住歌词"""
-        try:
-            spi = ctypes.windll.user32.SystemParametersInfoW
-            work_area = ctypes.c_int * 4
-            wa = work_area()
-            spi(0x0030, 0, wa, 0)
-            screen_top = wa[1]
-            screen_bottom = wa[3]
-        except:
-            screen_top = 0
-            screen_bottom = self.root.winfo_screenheight()
-
-        menu_h = self.menu.winfo_reqheight()
-        x, y = event.x_root, event.y_root
-        y = y - menu_h - 2
-        if y < screen_top:
-            y = screen_top
-        self.menu.post(x, y)
 
     def _hwnd(self):
         try:
@@ -148,6 +139,113 @@ class TaskbarLyricsWindow:
             pass
         self.root.after(500, self._ensure_topmost)
 
+    # ---- 播放控制按钮 ----
+
+    def _create_control_buttons(self, bg_color: str):
+        """创建左侧的 prev / play-pause / next 按钮"""
+        btn_bg = self._colors.get("btn", self.DEFAULT_COLORS["btn"])
+        btn_fg = self._colors.get("btn_text", self.DEFAULT_COLORS["btn_text"])
+        btn_w = 22  # 按钮宽度
+        btn_h = 22  # 按钮高度
+
+        # 垂直居中排列
+        frame_w = self.BUTTON_AREA_WIDTH
+        btn_x = (frame_w - btn_w) // 2
+
+        # 三个按钮垂直间距
+        total_h = btn_h * 3 + 6 * 2  # 3个按钮 + 2个间距
+        start_y = (self.root.winfo_height() - total_h) // 2
+
+        self._btn_prev = self._make_btn(
+            "⏮", btn_x, start_y, btn_w, btn_h, btn_bg, btn_fg,
+            self._on_prev
+        )
+        self._btn_play = self._make_btn(
+            "⏸", btn_x, start_y + btn_h + 6, btn_w, btn_h, btn_bg, btn_fg,
+            self._on_play_pause
+        )
+        self._btn_next = self._make_btn(
+            "⏭", btn_x, start_y + (btn_h + 6) * 2, btn_w, btn_h, btn_bg, btn_fg,
+            self._on_next
+        )
+
+    def _make_btn(self, text: str, x: int, y: int, w: int, h: int,
+                  bg: str, fg: str, command):
+        """创建一个带 hover 效果的按钮"""
+        canvas = tk.Canvas(self.btn_frame, width=w, height=h,
+                           bg=bg, highlightthickness=0, bd=0)
+        canvas.place(x=x, y=y)
+
+        # 绘制圆角矩形背景
+        r = 4  # 圆角半径
+        self._draw_round_rect(canvas, 0, 0, w, h, r, fill=bg)
+
+        # 绘制文字
+        canvas.create_text(w // 2, h // 2, text=text, fill=fg,
+                           font=("Segoe UI Symbol", 10), anchor="center")
+
+        # 事件绑定
+        canvas._hover_bg = bg
+        canvas._fg = fg
+        canvas._text_id = 1  # 文字 item id（第一个item）
+
+        canvas.bind("<Enter>", lambda e, c=canvas: self._btn_hover(c, True))
+        canvas.bind("<Leave>", lambda e, c=canvas: self._btn_hover(c, False))
+        canvas.bind("<Button-1>", lambda e, cmd=command: cmd())
+
+        return canvas
+
+    @staticmethod
+    def _draw_round_rect(canvas: tk.Canvas, x1: int, y1: int,
+                         x2: int, y2: int, r: int, fill: str):
+        """绘制圆角矩形"""
+        # 简化版：用矩形带圆角效果（实际Tkinter不支持，直接用矩形）
+        canvas.create_rectangle(x1, y1, x2, y2, fill=fill, outline="", tags="bg")
+
+    def _btn_hover(self, canvas: tk.Canvas, enter: bool):
+        """按钮 hover 效果"""
+        hover_bg = self._colors.get("btn_hover", self.DEFAULT_COLORS["btn_hover"])
+        normal_bg = self._colors.get("btn", self.DEFAULT_COLORS["btn"])
+        bg = hover_bg if enter else normal_bg
+        # 重绘背景
+        canvas.delete("bg")
+        self._draw_round_rect(canvas, 0, 0,
+                              int(canvas["width"]), int(canvas["height"]), 4, fill=bg)
+
+    def _on_play_pause(self):
+        if self._callbacks["play_pause"]:
+            self._callbacks["play_pause"]()
+            self._playing = not self._playing
+            self._update_play_button()
+
+    def _on_next(self):
+        if self._callbacks["next"]:
+            self._callbacks["next"]()
+
+    def _on_prev(self):
+        if self._callbacks["prev"]:
+            self._callbacks["prev"]()
+
+    def _update_play_button(self):
+        """更新播放/暂停按钮图标"""
+        if self._btn_play:
+            icon = "▶" if not self._playing else "⏸"
+            # 更新文字（第二个 item）
+            items = self._btn_play.find_all()
+            if items:
+                # 找文字 item（非 bg 的 item）
+                for item_id in items:
+                    tags = self._btn_play.gettags(item_id)
+                    if "bg" not in tags:
+                        self._btn_play.itemconfig(item_id, text=icon)
+                        break
+
+    def set_play_state(self, playing: bool):
+        """外部调用：同步播放状态"""
+        if self._playing != playing:
+            self._playing = playing
+            self._update_play_button()
+
     def _drag_move(self, e):
         self.root.geometry(f"+{self.root.winfo_x() + e.x - self._drag['x']}+"
                            f"{self.root.winfo_y() + e.y - self._drag['y']}")
@@ -167,15 +265,11 @@ class TaskbarLyricsWindow:
             pass
 
     def _toggle_ct(self):
-        self._ct = not self._ct
         try:
             h = self._hwnd()
             if h:
                 s = ctypes.windll.user32.GetWindowLongW(h, -20)
-                if self._ct:
-                    s |= 0x20
-                else:
-                    s &= ~0x20
+                s ^= 0x20  # toggle WS_EX_TRANSPARENT
                 ctypes.windll.user32.SetWindowLongW(h, -20, s)
         except:
             pass
@@ -194,12 +288,20 @@ class TaskbarLyricsWindow:
         _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
         self.root.configure(bg=_actual_bg)
         self.canvas.configure(bg=_actual_bg)
+        self.btn_frame.configure(bg=_actual_bg)
         if _bg == "transparent":
             self.root.attributes("-transparentcolor", self._TRANSPARENT_MAGIC)
         else:
             self.root.attributes("-transparentcolor", "")
         self.karaoke._text = ""  # force rebuild
         self._save_config()
+        # 更新按钮背景色
+        btn_bg = self._colors.get("btn", self.DEFAULT_COLORS["btn"])
+        for btn in (self._btn_prev, self._btn_play, self._btn_next):
+            if btn:
+                btn.delete("bg")
+                self._draw_round_rect(btn, 0, 0,
+                                      int(btn["width"]), int(btn["height"]), 4, fill=btn_bg)
 
     def _font_cfg(self):
         show_font_config(self.root, self._fonts, self._save_config, self.karaoke)

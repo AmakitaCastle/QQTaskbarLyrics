@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Callable
 
-from src.lyrics.cache import cache_get, cache_set, load_disk_lyrics, save_disk_lyrics, disk_cache_key
+from src.lyrics.cache import cache_get, cache_set, cache_clear, load_disk_lyrics, save_disk_lyrics, disk_cache_key
 from src.lyrics.providers.base import BaseLyricsProvider
 from src.utils.log import log
 
@@ -164,3 +164,9 @@ class LyricsManager:
             progress = max(0.0, min(1.0, (position_ms - t0) / d)) if d > 0 else 1.0
 
         return (orig, trans, progress)
+
+    def clear_cache(self):
+        """清除所有缓存（内存 + 磁盘）"""
+        self._cache.clear()
+        cache_clear()
+        log("[Lyrics] 缓存已清除")

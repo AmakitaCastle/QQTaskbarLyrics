@@ -83,6 +83,23 @@ def cache_clean():
         log(f"    [缓存] 清理 {len(expired_keys)} 条过期记录")
 
 
+def cache_clear():
+    """清除所有缓存文件"""
+    _load_cache()
+    with _cache_lock:
+        _cache_data.clear()
+    _save_cache()
+    # 清除磁盘歌词缓存
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        for f in _CACHE_DIR.glob("*.json"):
+            if f.name != "cache.json":
+                f.unlink(missing_ok=True)
+        log("    [缓存] 已清除所有缓存")
+    except Exception as e:
+        log(f"    [缓存] 清除失败: {e}")
+
+
 def disk_cache_key(title: str, artist: str, album: str = "") -> str:
     raw = f"{artist}|{title}|{album}"
     h = hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
