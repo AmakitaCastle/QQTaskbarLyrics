@@ -15,22 +15,26 @@ class MediaInfoProvider:
         self._lock = threading.Lock()
         self._running = False
         self._update_ts = 0.0
-        self._state = {"playing": True}  # track play/pause state
+        self._playing = True  # synced from GSMTC
 
     async def _fetch(self):
         try:
             from winsdk.windows.media.control import \
                 GlobalSystemMediaTransportControlsSessionManager as SM
+            from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionPlaybackStatus
             mgr = await SM.request_async()
             s = mgr.get_current_session()
             if not s:
                 return None
             p = await s.try_get_media_properties_async()
             tl = s.get_timeline_properties()
+            pb_status = s.get_playback_info().playback_status
+            is_playing = (pb_status == GlobalSystemMediaTransportControlsSessionPlaybackStatus.PLAYING)
             return {"title": p.title or "", "artist": p.artist or "",
                     "album": getattr(p, 'album_title', '') or "",
                     "position_ms": int(tl.position.total_seconds() * 1000),
-                    "duration_ms": int(tl.end_time.total_seconds() * 1000)}
+                    "duration_ms": int(tl.end_time.total_seconds() * 1000),
+                    "playing": is_playing}
         except Exception:
             return None
 
@@ -42,6 +46,7 @@ class MediaInfoProvider:
             r = loop.run_until_complete(self._fetch())
             if r:
                 with self._lock:
+                    self._playing = r.pop("playing", True)
                     self._info = r
                     self._update_ts = time.time()
                 fails = 0
@@ -64,7 +69,8 @@ class MediaInfoProvider:
         with self._lock:
             info = self._info.copy()
             ts = self._update_ts
-        if info["title"] and ts > 0:
+            playing = self._playing
+        if info["title"] and ts > 0 and playing:
             info["position_ms"] = int(info["position_ms"] + (time.time() - ts) * 1000)
         return info
 
@@ -100,8 +106,6 @@ class MediaInfoProvider:
 
     def play_pause(self):
         self._run_control("play_pause")
-        with self._lock:
-            self._state["playing"] = not self._state["playing"]
 
     def next_track(self):
         self._run_control("next")
@@ -111,4 +115,4 @@ class MediaInfoProvider:
 
     def is_playing(self):
         with self._lock:
-            return self._state.get("playing", True)
+            return self._playing
