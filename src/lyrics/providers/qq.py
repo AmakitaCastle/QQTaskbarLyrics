@@ -75,6 +75,24 @@ class QQMusicProvider(BaseLyricsProvider):
             log(f"    [QQ Session] 获取失败: {e}")
             return {"uid": 0, "sid": "", "userip": ""}
 
+    @staticmethod
+    def _is_instrumental(text: str) -> bool:
+        """检测歌词是否为纯音乐提示"""
+        if not text:
+            return False
+        keywords = [
+            "纯音乐",
+            "没有填词",
+            "暂无歌词",
+            "instrumental",
+            "伴奏",
+            "BGM",
+            "background music",
+            "此歌曲为",
+        ]
+        text_lower = text.lower()
+        return any(kw.lower() in text_lower for kw in keywords)
+
     def search(self, title: str, artist: str = "", album: str = "") -> Optional[SongInfo]:
         """搜索歌曲，尝试找到最佳匹配"""
         query = f"{title} {artist}".strip()
@@ -314,6 +332,9 @@ class QQMusicProvider(BaseLyricsProvider):
                 log(f"    [QQ音乐歌词] 使用 TripleDES 解密 (crypt={crypt})")
                 orig_text = _qrc_cloud_decrypt(lyric_enc)
                 log(f"    [QQ音乐歌词] QRC 解密成功, 原文前100字: {orig_text[:100]}")
+                if self._is_instrumental(orig_text):
+                    log("    [QQ音乐歌词] 检测到纯音乐标记，此歌曲无歌词")
+                    return None
             except Exception as e:
                 log(f"    [QQ音乐歌词] TripleDES 解密失败: {e}")
                 log(f"    [QQ音乐歌词] 尝试 QMC1 回退解密...")
@@ -438,6 +459,10 @@ class QQMusicProvider(BaseLyricsProvider):
             log(f"    [QQ音乐歌词(旧)] lyric 长度={len(lyric)}, trans 长度={len(trans_raw)}")
             if not lyric:
                 log(f"    [QQ音乐歌词(旧)] lyric 为空，完整响应 keys: {list(data.keys())}")
+                return None
+
+            if self._is_instrumental(lyric):
+                log(f"    [QQ音乐歌词(旧)] 检测到纯音乐标记，此歌曲无歌词")
                 return None
 
             orig_lines = self._parse_lrc(lyric)
