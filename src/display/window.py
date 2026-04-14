@@ -13,10 +13,17 @@ from src.display.config import show_color_config, show_font_config
 
 class TaskbarLyricsWindow:
     DEFAULT_COLORS = {"bg": "#1a1a2e", "sung": "#FFD700", "unsung": "#555566",
+<<<<<<< HEAD
                       "btn": "#333348", "btn_hover": "#4a4a6e", "btn_text": "#ccccdd"}
     DEFAULT_FONTS = {"lyric": ("Microsoft YaHei UI", 14, "bold")}
     DEFAULT_SIZE = {"width": 900, "height": 42}
     BUTTON_AREA_WIDTH = 75  # 左侧控制按钮区域宽度
+=======
+                      "divider": "#2a2a38"}
+    DEFAULT_FONTS = {"lyric": ("Microsoft YaHei UI", 14, "bold")}
+    DEFAULT_SIZE = {"width": 900, "height": 32}
+    BUTTON_AREA_WIDTH = 86  # 3×26 + spacing for control buttons
+>>>>>>> feature/control-bar
 
     def __init__(self, on_play_pause=None, on_next=None, on_prev=None):
         try:
@@ -37,17 +44,26 @@ class TaskbarLyricsWindow:
             "next": on_next,
             "prev": on_prev,
         }
+<<<<<<< HEAD
 
         # 播放控制按钮状态
         self._playing = True  # 默认播放中
         self._btn_prev = None
         self._btn_play = None
         self._btn_next = None
+=======
+        self._playing = True  # current play state for button icon
+        self._btn_prev = None
+        self._btn_play = None
+        self._btn_next = None
+        self._ct = False
+>>>>>>> feature/control-bar
 
         # 透明模式：用一个极罕见颜色作为透明色
         self._TRANSPARENT_MAGIC = "#000001"
         _bg = self._colors.get("bg", self.DEFAULT_COLORS["bg"])
         _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
+        self._actual_bg = _actual_bg
 
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         _size = self._config.get("size", {})
@@ -66,6 +82,7 @@ class TaskbarLyricsWindow:
         self.root.after(100, self._setup_style)
         self.root.after(500, self._ensure_topmost)
 
+<<<<<<< HEAD
         # ---- 左侧控制按钮 + Canvas ----
         self.btn_frame = tk.Frame(self.root, bg=_actual_bg,
                                   width=self.BUTTON_AREA_WIDTH, height=wh)
@@ -75,19 +92,53 @@ class TaskbarLyricsWindow:
         self._create_control_buttons(_actual_bg)
 
         self.canvas = tk.Canvas(self.root, bg=_actual_bg,
-                                height=wh, highlightthickness=0, bd=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True, padx=12)
+=======
+        # ---- 容器：按钮 + 分隔线 + 歌词 ----
+        self.container = tk.Frame(self.root, bg=_actual_bg, height=wh)
+        self.container.pack(fill=tk.X, expand=False)
 
+        # 左侧控制按钮组
+        self.ctrl_group = tk.Frame(self.container, bg=_actual_bg,
+                                   width=self.BUTTON_AREA_WIDTH)
+        self.ctrl_group.pack(side=tk.LEFT, fill=tk.Y)
+        self.ctrl_group.pack_propagate(False)
+
+        self._create_control_buttons(wh)
+
+        # 分隔线
+        div_color = self._colors.get("divider", self.DEFAULT_COLORS["divider"])
+        self.divider = tk.Frame(self.container, bg=div_color, width=1, height=wh)
+        self.divider.pack(side=tk.LEFT, padx=8)
+
+        # 歌词 Canvas
+        self.canvas = tk.Canvas(self.container, bg=_actual_bg,
+>>>>>>> feature/control-bar
+                                height=wh, highlightthickness=0, bd=0)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+<<<<<<< HEAD
         # Karaoke engine（传入按钮区宽度偏移）
         self.karaoke = KaraokeEngine(
             self.canvas, self._colors, self._fonts,
             offset_x=self.BUTTON_AREA_WIDTH
+=======
+        # Karaoke engine（传入按钮区偏移）
+        self.karaoke = KaraokeEngine(
+            self.canvas, self._colors, self._fonts,
+            offset_x=self.BUTTON_AREA_WIDTH + 1 + 16  # buttons + divider + padding
+>>>>>>> feature/control-bar
         )
 
-        # 拖拽
+        # 拖拽 — bind to each widget so events are not swallowed by children
         self._drag = {"x": 0, "y": 0}
+<<<<<<< HEAD
         self.canvas.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
         self.canvas.bind("<B1-Motion>", self._drag_move)
+=======
+        for w in (self.container, self.ctrl_group, self.divider, self.canvas):
+            w.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
+            w.bind("<B1-Motion>", self._drag_move)
+>>>>>>> feature/control-bar
 
         # 键盘快捷键：Esc 退出，Ctrl+T 切换穿透
         self.root.bind("<Escape>", lambda e: self._quit())
@@ -141,6 +192,7 @@ class TaskbarLyricsWindow:
 
     # ---- 播放控制按钮 ----
 
+<<<<<<< HEAD
     def _create_control_buttons(self, bg_color: str):
         """创建左侧的 prev / play-pause / next 按钮"""
         btn_bg = self._colors.get("btn", self.DEFAULT_COLORS["btn"])
@@ -189,12 +241,48 @@ class TaskbarLyricsWindow:
         canvas._fg = fg
         canvas._text_id = 1  # 文字 item id（第一个item）
 
+=======
+    def _create_control_buttons(self, container_h: int):
+        """创建水平排列的 prev / play-pause / next 圆形按钮"""
+        btn_size = 26
+        btn_fg = "#ccccdd"
+
+        # 垂直居中
+        start_x = (self.BUTTON_AREA_WIDTH - btn_size * 3) // 2
+        start_y = (container_h - btn_size) // 2
+
+        self._btn_prev = self._make_circle_btn(
+            "\u23ee", start_x, start_y, btn_size, btn_fg, self._on_prev
+        )
+        self._btn_play = self._make_circle_btn(
+            "\u23f8", start_x + btn_size, start_y, btn_size, btn_fg, self._on_play_pause
+        )
+        self._btn_next = self._make_circle_btn(
+            "\u23ed", start_x + btn_size * 2, start_y, btn_size, btn_fg, self._on_next
+        )
+
+    def _make_circle_btn(self, text: str, x: int, y: int, size: int,
+                         fg: str, command):
+        """创建一个圆形按钮（Canvas + oval + text + hover）"""
+        canvas = tk.Canvas(self.ctrl_group, width=size, height=size,
+                           bg=self._actual_bg,
+                           highlightthickness=0, bd=0)
+        canvas.place(x=x, y=y)
+
+        r = size // 2
+        canvas.create_oval(0, 0, size, size, fill="", outline="", tags="bg")
+        canvas.create_text(r, r, text=text, fill=fg,
+                           font=("Segoe UI Symbol", 11), anchor="center", tags="icon")
+
+        canvas._fg = fg
+>>>>>>> feature/control-bar
         canvas.bind("<Enter>", lambda e, c=canvas: self._btn_hover(c, True))
         canvas.bind("<Leave>", lambda e, c=canvas: self._btn_hover(c, False))
         canvas.bind("<Button-1>", lambda e, cmd=command: cmd())
 
         return canvas
 
+<<<<<<< HEAD
     @staticmethod
     def _draw_round_rect(canvas: tk.Canvas, x1: int, y1: int,
                          x2: int, y2: int, r: int, fill: str):
@@ -211,6 +299,18 @@ class TaskbarLyricsWindow:
         canvas.delete("bg")
         self._draw_round_rect(canvas, 0, 0,
                               int(canvas["width"]), int(canvas["height"]), 4, fill=bg)
+=======
+    def _btn_hover(self, canvas: tk.Canvas, enter: bool):
+        """按钮 hover 效果：显示/隐藏半透明圆形背景"""
+        if enter:
+            canvas.delete("bg")
+            canvas.create_oval(0, 0, int(canvas["width"]), int(canvas["height"]),
+                               fill="#33334a", outline="", tags="bg")
+        else:
+            canvas.delete("bg")
+            canvas.create_oval(0, 0, int(canvas["width"]), int(canvas["height"]),
+                               fill="", outline="", tags="bg")
+>>>>>>> feature/control-bar
 
     def _on_play_pause(self):
         if self._callbacks["play_pause"]:
@@ -227,6 +327,7 @@ class TaskbarLyricsWindow:
             self._callbacks["prev"]()
 
     def _update_play_button(self):
+<<<<<<< HEAD
         """更新播放/暂停按钮图标"""
         if self._btn_play:
             icon = "▶" if not self._playing else "⏸"
@@ -239,6 +340,17 @@ class TaskbarLyricsWindow:
                     if "bg" not in tags:
                         self._btn_play.itemconfig(item_id, text=icon)
                         break
+=======
+        """更新播放/暂停按钮图标和颜色"""
+        if self._btn_play:
+            icon = "\u25b6" if not self._playing else "\u23f8"
+            color = "#FFD700" if self._playing else "#ccccdd"
+            for item_id in self._btn_play.find_all():
+                tags = self._btn_play.gettags(item_id)
+                if "icon" in tags:
+                    self._btn_play.itemconfig(item_id, text=icon, fill=color)
+                    break
+>>>>>>> feature/control-bar
 
     def set_play_state(self, playing: bool):
         """外部调用：同步播放状态"""
@@ -283,17 +395,28 @@ class TaskbarLyricsWindow:
 
     def _apply_colors(self):
         """应用颜色配置到窗口"""
-        self._TRANSPARENT_MAGIC = "#000001"
         _bg = self._colors.get("bg", self.DEFAULT_COLORS["bg"])
         _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
+        self._actual_bg = _actual_bg
         self.root.configure(bg=_actual_bg)
+        self.container.configure(bg=_actual_bg)
+        self.ctrl_group.configure(bg=_actual_bg)
         self.canvas.configure(bg=_actual_bg)
+<<<<<<< HEAD
         self.btn_frame.configure(bg=_actual_bg)
+=======
+        for btn in (self._btn_prev, self._btn_play, self._btn_next):
+            if btn:
+                btn.configure(bg=_actual_bg)
+>>>>>>> feature/control-bar
         if _bg == "transparent":
             self.root.attributes("-transparentcolor", self._TRANSPARENT_MAGIC)
         else:
             self.root.attributes("-transparentcolor", "")
         self.karaoke._text = ""  # force rebuild
+        # 更新分隔线颜色
+        div_color = self._colors.get("divider", self.DEFAULT_COLORS["divider"])
+        self.divider.configure(bg=div_color)
         self._save_config()
         # 更新按钮背景色
         btn_bg = self._colors.get("btn", self.DEFAULT_COLORS["btn"])

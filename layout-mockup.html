@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Taskbar Lyrics Layout Mockup</title>
+<style>
+  body { margin:0; display:flex; justify-content:center; padding-top:80px; background:#111; font-family: sans-serif; }
+
+  .mockup { margin: 0 40px 60px; }
+  .mockup h3 { color:#888; font-size:14px; margin-bottom:8px; text-align:center; }
+
+  /* ---- Mockup 1: 当前实现 (vertical buttons + canvas) ---- */
+  .mock-1 {
+    display:flex; width:500px; height:42px; background:#1a1a2e;
+    border-radius:0; overflow:hidden;
+  }
+  .mock-1 .btn-frame {
+    width:75px; height:42px; background:#1a1a2e;
+    display:flex; flex-direction:column; justify-content:center; align-items:center; gap:4px;
+  }
+  .mock-1 .btn-frame .b {
+    width:22px; height:22px; background:#333348; border-radius:4px;
+    display:flex; align-items:center; justify-content:center;
+    color:#ccccdd; font-size:10px;
+  }
+  .mock-1 .lyrics {
+    flex:1; display:flex; align-items:center; padding:0 12px;
+    color:#555566; font-size:14px; font-weight:bold;
+  }
+
+  /* ---- Mockup 2: 参考图风格 (single pill, circular buttons) ---- */
+  .mock-2 {
+    width:500px; height:32px; background:rgba(28,28,38,0.95);
+    border-radius:16px; display:flex; align-items:center;
+    padding:0 10px; gap:0; overflow:hidden;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.5);
+  }
+  .mock-2 .ctrl-group {
+    display:flex; align-items:center; gap:0;
+  }
+  .mock-2 .ctrl-btn {
+    width:26px; height:26px; border-radius:50%;
+    background:transparent; border:none; color:#ccccdd;
+    font-size:11px; cursor:pointer; display:flex;
+    align-items:center; justify-content:center;
+    transition: background 0.15s;
+  }
+  .mock-2 .ctrl-btn:hover { background:rgba(255,255,255,0.1); }
+  .mock-2 .ctrl-btn.active { color:#FFD700; }
+  .mock-2 .divider {
+    width:1px; height:16px; background:rgba(255,255,255,0.15);
+    margin: 0 8px;
+  }
+  .mock-2 .lyrics {
+    flex:1; color:#555566; font-size:13px; font-weight:bold;
+    padding-left:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* ---- Mockup 3: 中间方案 (single pill, rounded-rect buttons) ---- */
+  .mock-3 {
+    width:500px; height:32px; background:rgba(28,28,38,0.95);
+    border-radius:16px; display:flex; align-items:center;
+    padding:0 8px; gap:0; overflow:hidden;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.5);
+  }
+  .mock-3 .ctrl-group {
+    display:flex; align-items:center; gap:2px;
+  }
+  .mock-3 .ctrl-btn {
+    width:24px; height:24px; border-radius:5px;
+    background:rgba(51,51,72,0.8); border:none; color:#ccccdd;
+    font-size:11px; cursor:pointer; display:flex;
+    align-items:center; justify-content:center;
+    transition: background 0.15s;
+  }
+  .mock-3 .ctrl-btn:hover { background:rgba(74,74,110,0.9); }
+  .mock-3 .ctrl-btn.active { color:#FFD700; }
+  .mock-3 .divider {
+    width:1px; height:16px; background:rgba(255,255,255,0.15);
+    margin: 0 8px;
+  }
+  .mock-3 .lyrics {
+    flex:1; color:#555566; font-size:13px; font-weight:bold;
+    padding-left:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* Interactive labels */
+  .label { color:#555; font-size:11px; margin-top:4px; text-align:center; }
+
+  /* ---- Mockup 4: 用户选择 — 圆形按钮 + 矩形容器 ---- */
+  .mock-4 {
+    width:500px; height:32px; background:#1a1a2e;
+    border-radius:0; display:flex; align-items:center;
+    padding:0 10px; gap:0; overflow:hidden;
+  }
+  .mock-4 .ctrl-group {
+    display:flex; align-items:center; gap:0;
+  }
+  .mock-4 .ctrl-btn {
+    width:26px; height:26px; border-radius:50%;
+    background:transparent; border:none; color:#ccccdd;
+    font-size:11px; cursor:pointer; display:flex;
+    align-items:center; justify-content:center;
+    transition: background 0.15s;
+  }
+  .mock-4 .ctrl-btn:hover { background:rgba(255,255,255,0.1); }
+  .mock-4 .ctrl-btn.active { color:#FFD700; }
+  .mock-4 .divider {
+    width:1px; height:16px; background:rgba(255,255,255,0.15);
+    margin: 0 8px;
+  }
+  .mock-4 .lyrics {
+    flex:1; color:#555566; font-size:13px; font-weight:bold;
+    padding-left:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* Progress bar demo — 矩形容器 */
+  .progress-demo {
+    margin-top: 20px;
+    width:500px;
+    height:32px;
+    background:#1a1a2e;
+    border-radius:0;
+    display:flex;
+    align-items:center;
+    padding:0 10px;
+    overflow:hidden;
+  }
+  .progress-demo .ctrl-group {
+    display:flex; align-items:center; gap:0;
+  }
+  .progress-demo .ctrl-btn {
+    width:26px; height:26px; border-radius:50%;
+    background:transparent; border:none; color:#ccccdd;
+    font-size:11px; cursor:pointer; display:flex;
+    align-items:center; justify-content:center;
+  }
+  .progress-demo .divider {
+    width:1px; height:16px; background:rgba(255,255,255,0.15);
+    margin: 0 8px;
+  }
+  .progress-demo .lyrics-area {
+    flex:1; position:relative; height:20px; overflow:hidden;
+  }
+  .progress-demo .lyrics-sung {
+    position:absolute; top:50%; transform:translateY(-50%);
+    color:#FFD700; font-size:13px; font-weight:bold; white-space:nowrap;
+  }
+  .progress-demo .lyrics-mid {
+    position:absolute; top:50%; transform:translateY(-50%);
+    color:#886622; font-size:13px; font-weight:bold; white-space:nowrap;
+  }
+  .progress-demo .lyrics-unsung {
+    position:absolute; top:50%; transform:translateY(-50%);
+    color:#555566; font-size:13px; font-weight:bold; white-space:nowrap;
+  }
+  .slider-row {
+    width:500px; margin-top:10px; display:flex; align-items:center; gap:10px;
+  }
+  .slider-row label { color:#888; font-size:12px; }
+  .slider-row input[type=range] { flex:1; }
+</style>
+</head>
+<body>
+
+<div style="display:flex; flex-direction:column; align-items:center; gap:30px; padding-bottom:60px;">
+
+  <!-- Mockup 1 -->
+  <div class="mockup">
+    <h3>① 当前实现 — 垂直按钮 + 分离布局</h3>
+    <div class="mock-1">
+      <div class="btn-frame">
+        <div class="b">⏮</div>
+        <div class="b">⏸</div>
+        <div class="b">⏭</div>
+      </div>
+      <div class="lyrics">只有你是天蓝色</div>
+    </div>
+    <div class="label">高度 42px，左右分栏</div>
+  </div>
+
+  <!-- Mockup 2 -->
+  <div class="mockup">
+    <h3>② 参考图风格 — 圆形按钮 + 药丸容器</h3>
+    <div class="mock-2">
+      <div class="ctrl-group">
+        <button class="ctrl-btn" onclick="this.classList.toggle('active')">⏮</button>
+        <button class="ctrl-btn active" onclick="this.textContent = this.textContent==='⏸'?'▶':'⏸'; this.classList.toggle('active')">⏸</button>
+        <button class="ctrl-btn" onclick="this.classList.toggle('active')">⏭</button>
+      </div>
+      <div class="divider"></div>
+      <div class="lyrics">只有你是天蓝色</div>
+    </div>
+    <div class="label">高度 32px，圆角药丸，圆形按钮</div>
+  </div>
+
+  <!-- Mockup 3 -->
+  <div class="mockup">
+    <h3>③ 中间方案 — 圆角方形按钮 + 药丸容器</h3>
+    <div class="mock-3">
+      <div class="ctrl-group">
+        <button class="ctrl-btn" onclick="this.classList.toggle('active')">⏮</button>
+        <button class="ctrl-btn active" onclick="this.textContent = this.textContent==='⏸'?'▶':'⏸'; this.classList.toggle('active')">⏸</button>
+        <button class="ctrl-btn" onclick="this.classList.toggle('active')">⏭</button>
+      </div>
+      <div class="divider"></div>
+      <div class="lyrics">只有你是天蓝色</div>
+    </div>
+    <div class="label">高度 32px，圆角药丸，圆角方形按钮</div>
+  </div>
+
+  <!-- Mockup 4: 用户选择 -->
+  <div class="mockup">
+    <h3>✦ 你选择的方案 — 圆形按钮 + 矩形容器</h3>
+    <div class="mock-4">
+      <div class="ctrl-group">
+        <button class="ctrl-btn active" onclick="this.classList.toggle('active')">⏮</button>
+        <button class="ctrl-btn active" onclick="this.textContent = this.textContent==='⏸'?'▶':'⏸'; this.classList.toggle('active')">⏸</button>
+        <button class="ctrl-btn active" onclick="this.classList.toggle('active')">⏭</button>
+      </div>
+      <div class="divider"></div>
+      <div class="lyrics">只有你是天蓝色</div>
+    </div>
+    <div class="label">高度 32px，直角矩形，圆形按钮 + 竖线分隔</div>
+  </div>
+
+  <!-- Interactive: progress animation -->
+  <div class="mockup">
+    <h3>🎬 交互演示 — 歌词进度动画</h3>
+    <div class="progress-demo" id="demo">
+      <div class="ctrl-group">
+        <button class="ctrl-btn" onclick="skipPrev()">⏮</button>
+        <button class="ctrl-btn" id="demoPlayBtn" onclick="toggleDemo()">⏸</button>
+        <button class="ctrl-btn" onclick="skipNext()">⏭</button>
+      </div>
+      <div class="divider"></div>
+      <div class="lyrics-area" id="lyricsArea">
+        <span class="lyrics-sung" id="sung"></span>
+        <span class="lyrics-mid" id="mid"></span>
+        <span class="lyrics-unsung" id="unsung"></span>
+      </div>
+    </div>
+    <div class="slider-row">
+      <label>进度</label>
+      <input type="range" id="progressSlider" min="0" max="100" value="0" oninput="seekTo(this.value)">
+      <label id="pctLabel">0%</label>
+    </div>
+    <div class="label">拖动滑块查看歌词逐字高亮效果</div>
+  </div>
+
+</div>
+
+<script>
+const lyricsText = "只有你是天蓝色";
+let progress = 0;
+let playing = true;
+let animFrame = null;
+
+function render() {
+  const total = lyricsText.length;
+  const split = Math.floor(progress * total);
+  const mid = split < total ? lyricsText[split] : '';
+  const sung = lyricsText.substring(0, split);
+  const unsung = lyricsText.substring(split + 1);
+
+  document.getElementById('sung').textContent = sung;
+  document.getElementById('mid').textContent = mid;
+  document.getElementById('unsung').textContent = unsung;
+  document.getElementById('pctLabel').textContent = Math.round(progress * 100) + '%';
+  document.getElementById('progressSlider').value = Math.round(progress * 100);
+
+  // position
+  const area = document.getElementById('lyricsArea');
+  const areaW = area.offsetWidth;
+  const cw = areaW;
+  const highlightPx = cw * progress;
+
+  if (cw <= areaW) {
+    const x0 = (areaW - cw) / 2;
+    const sungPx = (split / total) * cw;
+    const midPx = (1 / total) * cw;
+    document.getElementById('sung').style.left = x0 + 'px';
+    document.getElementById('mid').style.left = (x0 + sungPx) + 'px';
+    document.getElementById('unsung').style.left = (x0 + sungPx + midPx) + 'px';
+  }
+}
+
+function tick() {
+  if (playing) {
+    progress += 0.003;
+    if (progress >= 1) progress = 0;
+    render();
+  }
+  animFrame = requestAnimationFrame(tick);
+}
+
+function seekTo(val) {
+  progress = val / 100;
+  render();
+}
+
+function toggleDemo() {
+  playing = !playing;
+  document.getElementById('demoPlayBtn').textContent = playing ? '⏸' : '▶';
+}
+
+function skipPrev() { progress = Math.max(0, progress - 0.2); render(); }
+function skipNext() { progress = Math.min(1, progress + 0.2); render(); }
+
+render();
+animFrame = requestAnimationFrame(tick);
+</script>
+</body>
+</html>
+

@@ -14,7 +14,11 @@ class KaraokeEngine:
         self.canvas = canvas
         self.colors = colors
         self.fonts = fonts
+<<<<<<< HEAD
         self.offset_x = offset_x  # 左侧按钮区域占用的宽度
+=======
+        self.offset_x = offset_x
+>>>>>>> feature/control-bar
 
         self._text = ""
         self._sung_id = None
@@ -63,7 +67,7 @@ class KaraokeEngine:
         self._total_px = cum[-1]
 
         # 垂直居中
-        canvas_h = self.canvas.winfo_height() or 42
+        canvas_h = self.canvas.winfo_height() or 32
         cy = canvas_h // 2
         col_sung = self.colors.get("sung", "#FFD700")
         col_unsung = self.colors.get("unsung", "#555566")
@@ -82,7 +86,11 @@ class KaraokeEngine:
 
         progress = max(0.0, min(1.0, progress))
         highlight_px = self._total_px * progress
+<<<<<<< HEAD
         cw = (self._canvas_w or 860) - self.offset_x  # 减去按钮区宽度
+=======
+        cw = (self._canvas_w or 860) - self.offset_x
+>>>>>>> feature/control-bar
         cum = self._cum_widths
         n = len(text)
 
