@@ -11,6 +11,11 @@ try:
 except ImportError:
     pystray = None
 
+try:
+    from src.display.config import get_cache_enabled
+except ImportError:
+    get_cache_enabled = lambda: True
+
 
 def _make_icon():
     """生成托盘图标 — 金色音符 on 深色圆角矩形"""
@@ -76,8 +81,16 @@ class TrayManager:
                 lambda: self._invoke(self.window._font_cfg),
             ),
             pystray.MenuItem(
+                "按钮设置",
+                lambda: self._invoke(self.window._btn_cfg),
+            ),
+            pystray.MenuItem(
                 "清除缓存",
                 lambda: self._invoke(self._clear_cache),
+            ),
+            pystray.MenuItem(
+                lambda item: "启用缓存 ✓" if self._cache_enabled() else "启用缓存",
+                lambda item: self._invoke(self._toggle_cache),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
@@ -136,6 +149,20 @@ class TrayManager:
         """清除歌词缓存"""
         if self.lyrics_manager:
             self.lyrics_manager.clear_cache()
+
+    def _cache_enabled(self) -> bool:
+        """获取当前缓存启用状态"""
+        if self.lyrics_manager:
+            return self.lyrics_manager.cache_enabled
+        return get_cache_enabled()
+
+    def _toggle_cache(self):
+        """切换缓存开关"""
+        if self.lyrics_manager:
+            new_state = self.lyrics_manager.toggle_cache()
+            # 持久化到配置文件
+            from src.display.config import set_cache_enabled
+            set_cache_enabled(new_state)
 
     def _invoke(self, fn):
         """安全地在 tkinter 主线程中调用函数"""

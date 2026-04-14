@@ -63,7 +63,7 @@ class KaraokeEngine:
         self._total_px = cum[-1]
 
         # 垂直居中
-        canvas_h = self.canvas.winfo_height() or 32
+        canvas_h = self.canvas.winfo_height() or 38
         cy = canvas_h // 2
         col_sung = self.colors.get("sung", "#FFD700")
         col_unsung = self.colors.get("unsung", "#555566")
@@ -112,7 +112,7 @@ class KaraokeEngine:
         mid_px = ch_w
 
         if self._total_px <= cw:
-            x0 = self.offset_x + (cw - self._total_px) / 2
+            x0 = self.offset_x
         else:
             target = self.offset_x + cw * 0.4
             x0 = target - highlight_px

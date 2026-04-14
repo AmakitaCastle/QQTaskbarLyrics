@@ -28,6 +28,19 @@ def save_config(config: dict):
         pass
 
 
+def get_cache_enabled() -> bool:
+    """获取缓存启用状态，默认 True"""
+    cfg = load_config()
+    return cfg.get("cache_enabled", True)
+
+
+def set_cache_enabled(enabled: bool):
+    """保存缓存启用状态"""
+    cfg = load_config()
+    cfg["cache_enabled"] = enabled
+    save_config(cfg)
+
+
 def show_color_config(parent, colors, save_fn, root, canvas):
     win = tk.Toplevel(parent)
     win.title("颜色")
@@ -92,6 +105,50 @@ def show_color_config(parent, colors, save_fn, root, canvas):
     tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
               width=10).pack(side=tk.RIGHT)
 
+
+def show_button_config(parent, colors, save_fn, window, apply_fn):
+    """按钮设置弹窗"""
+    win = tk.Toplevel(parent)
+    win.title("按钮设置")
+    win.geometry("380x140")
+    win.configure(bg="#2a2a3e")
+    win.transient(parent)
+    win.grab_set()
+
+    # --- 按钮图标颜色 ---
+    f1 = tk.Frame(win, bg="#2a2a3e")
+    f1.pack(fill=tk.X, padx=20, pady=(12, 6))
+    tk.Label(f1, text="图标颜色", fg="#FFF", bg="#2a2a3e",
+             font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
+    btn_val = colors.get("btn_fg", "#ffffff")
+    btn_var = tk.StringVar(value=btn_val)
+    tk.Entry(f1, textvariable=btn_var, width=9, font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
+    pv = tk.Label(f1, text="  ", bg=btn_val, width=3, relief=tk.RIDGE)
+    pv.pack(side=tk.LEFT)
+    btn_var.trace_add("write", lambda *a: pv.config(bg=btn_var.get()))
+
+    # --- 按钮大小 ---
+    f2 = tk.Frame(win, bg="#2a2a3e")
+    f2.pack(fill=tk.X, padx=20, pady=6)
+    tk.Label(f2, text="按钮大小", fg="#FFF", bg="#2a2a3e",
+             font=("Microsoft YaHei UI", 10)).pack(side=tk.LEFT)
+    btn_size = tk.IntVar(value=28)
+    tk.Spinbox(f2, from_=20, to=40, textvariable=btn_size, width=4,
+               font=("Consolas", 11)).pack(side=tk.LEFT, padx=8)
+
+    bf = tk.Frame(win, bg="#2a2a3e")
+    bf.pack(fill=tk.X, padx=20, pady=12)
+
+    def apply():
+        colors["btn_fg"] = btn_var.get()
+        apply_fn(btn_size.get())
+        save_fn()
+        win.destroy()
+
+    tk.Button(bf, text="应用", command=apply, bg="#4a4a6e", fg="#FFF",
+              width=10).pack(side=tk.LEFT)
+    tk.Button(bf, text="关闭", command=win.destroy, bg="#6a4a4e", fg="#FFF",
+              width=10).pack(side=tk.RIGHT)
 
 
 def show_font_config(parent, fonts, save_fn, karaoke_engine):

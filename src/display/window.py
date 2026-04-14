@@ -8,15 +8,15 @@ from tkinter import font as tkfont
 
 from src.display.config import load_config, save_config
 from src.display.karaoke import KaraokeEngine
-from src.display.config import show_color_config, show_font_config
+from src.display.config import show_color_config, show_font_config, show_button_config
 
 
 class TaskbarLyricsWindow:
     DEFAULT_COLORS = {"bg": "#1a1a2e", "sung": "#FFD700", "unsung": "#555566",
-                      "divider": "#2a2a38"}
+                      "btn_fg": "#ffffff"}
     DEFAULT_FONTS = {"lyric": ("Microsoft YaHei UI", 14, "bold")}
-    DEFAULT_SIZE = {"width": 900, "height": 32}
-    BUTTON_AREA_WIDTH = 86  # 3×26 + spacing for control buttons
+    DEFAULT_SIZE = {"width": 900, "height": 38}
+    BUTTON_AREA_WIDTH = 100  # 3×28 + 2×8 gaps + padding
 
     def __init__(self, on_play_pause=None, on_next=None, on_prev=None):
         try:
@@ -78,11 +78,6 @@ class TaskbarLyricsWindow:
 
         self._create_control_buttons(wh)
 
-        # 分隔线
-        div_color = self._colors.get("divider", self.DEFAULT_COLORS["divider"])
-        self.divider = tk.Frame(self.container, bg=div_color, width=1, height=wh)
-        self.divider.pack(side=tk.LEFT, padx=8)
-
         # 歌词 Canvas
         self.canvas = tk.Canvas(self.container, bg=_actual_bg,
                                 height=wh, highlightthickness=0, bd=0)
@@ -91,12 +86,12 @@ class TaskbarLyricsWindow:
         # Karaoke engine（传入按钮区偏移）
         self.karaoke = KaraokeEngine(
             self.canvas, self._colors, self._fonts,
-            offset_x=self.BUTTON_AREA_WIDTH + 1 + 16  # buttons + divider + padding
+            offset_x=8
         )
 
         # 拖拽 — bind to each widget so events are not swallowed by children
         self._drag = {"x": 0, "y": 0}
-        for w in (self.container, self.ctrl_group, self.divider, self.canvas):
+        for w in (self.container, self.ctrl_group, self.canvas):
             w.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
             w.bind("<B1-Motion>", self._drag_move)
 
@@ -141,6 +136,8 @@ class TaskbarLyricsWindow:
 
     def _ensure_topmost(self):
         try:
+            if not self.root.winfo_viewable():
+                return
             h = self._hwnd()
             if h:
                 ctypes.windll.user32.SetWindowPos(h, -1, 0, 0, 0, 0,
@@ -154,21 +151,23 @@ class TaskbarLyricsWindow:
 
     def _create_control_buttons(self, container_h: int):
         """创建水平排列的 prev / play-pause / next 圆形按钮"""
-        btn_size = 26
-        btn_fg = "#ccccdd"
+        btn_size = 28
+        btn_gap = 8  # 按钮间隔
+        btn_fg = self._colors.get("btn_fg", "#ffffff")
 
         # 垂直居中
-        start_x = (self.BUTTON_AREA_WIDTH - btn_size * 3) // 2
+        area_w = btn_size * 3 + btn_gap * 2
+        start_x = (self.BUTTON_AREA_WIDTH - area_w) // 2
         start_y = (container_h - btn_size) // 2
 
         self._btn_prev = self._make_circle_btn(
             "\u23ee", start_x, start_y, btn_size, btn_fg, self._on_prev
         )
         self._btn_play = self._make_circle_btn(
-            "\u23f8", start_x + btn_size, start_y, btn_size, btn_fg, self._on_play_pause
+            "\u23f8", start_x + btn_size + btn_gap, start_y, btn_size, btn_fg, self._on_play_pause
         )
         self._btn_next = self._make_circle_btn(
-            "\u23ed", start_x + btn_size * 2, start_y, btn_size, btn_fg, self._on_next
+            "\u23ed", start_x + (btn_size + btn_gap) * 2, start_y, btn_size, btn_fg, self._on_next
         )
 
     def _make_circle_btn(self, text: str, x: int, y: int, size: int,
@@ -182,7 +181,7 @@ class TaskbarLyricsWindow:
         r = size // 2
         canvas.create_oval(0, 0, size, size, fill="", outline="", tags="bg")
         canvas.create_text(r, r, text=text, fill=fg,
-                           font=("Segoe UI Symbol", 11), anchor="center", tags="icon")
+                           font=("Segoe UI Symbol", 13), anchor="center", tags="icon")
 
         canvas._fg = fg
         canvas.bind("<Enter>", lambda e, c=canvas: self._btn_hover(c, True))
@@ -192,15 +191,7 @@ class TaskbarLyricsWindow:
         return canvas
 
     def _btn_hover(self, canvas: tk.Canvas, enter: bool):
-        """按钮 hover 效果：显示/隐藏半透明圆形背景"""
-        if enter:
-            canvas.delete("bg")
-            canvas.create_oval(0, 0, int(canvas["width"]), int(canvas["height"]),
-                               fill="#33334a", outline="", tags="bg")
-        else:
-            canvas.delete("bg")
-            canvas.create_oval(0, 0, int(canvas["width"]), int(canvas["height"]),
-                               fill="", outline="", tags="bg")
+        pass
 
     def _on_play_pause(self):
         if self._callbacks["play_pause"]:
@@ -217,10 +208,10 @@ class TaskbarLyricsWindow:
             self._callbacks["prev"]()
 
     def _update_play_button(self):
-        """更新播放/暂停按钮图标和颜色"""
+        """更新播放/暂停按钮图标"""
         if self._btn_play:
             icon = "\u25b6" if not self._playing else "\u23f8"
-            color = "#FFD700" if self._playing else "#ccccdd"
+            color = self._colors.get("btn_fg", "#ffffff")
             for item_id in self._btn_play.find_all():
                 tags = self._btn_play.gettags(item_id)
                 if "icon" in tags:
@@ -285,13 +276,26 @@ class TaskbarLyricsWindow:
         else:
             self.root.attributes("-transparentcolor", "")
         self.karaoke._text = ""  # force rebuild
-        # 更新分隔线颜色
-        div_color = self._colors.get("divider", self.DEFAULT_COLORS["divider"])
-        self.divider.configure(bg=div_color)
         self._save_config()
 
     def _font_cfg(self):
         show_font_config(self.root, self._fonts, self._save_config, self.karaoke)
+
+    def _btn_cfg(self):
+        show_button_config(self.root, self._colors, self._save_config, self, self._apply_button_size)
+
+    def _apply_button_size(self, size: int):
+        """应用按钮大小：重建按钮"""
+        if self._btn_prev:
+            self._btn_prev.destroy()
+            self._btn_play.destroy()
+            self._btn_next.destroy()
+        self.BUTTON_AREA_WIDTH = size * 3 + 16  # btn*3 + gap*2
+        self.ctrl_group.configure(width=self.BUTTON_AREA_WIDTH)
+        self._create_control_buttons(self.root.winfo_height())
+        # 更新歌词偏移
+        self.karaoke.offset_x = 8
+        self.karaoke._text = ""  # force rebuild
 
     def _size_cfg(self):
         """窗口大小设置"""

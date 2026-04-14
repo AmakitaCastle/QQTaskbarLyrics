@@ -93,8 +93,28 @@ class QQMusicProvider(BaseLyricsProvider):
         text_lower = text.lower()
         return any(kw.lower() in text_lower for kw in keywords)
 
+    # AI 翻译生成的固定提示语，需过滤
+    AI_TRANSLATION_ATTRIBUTIONS = [
+        "以下歌词翻译由文曲大模型提供",
+        "以下歌词翻译由AI生成",
+    ]
+
+    @staticmethod
+    def _is_ai_attribution(text: str) -> bool:
+        """检测是否为 AI 翻译提示语"""
+        return any(kw in text for kw in QQMusicProvider.AI_TRANSLATION_ATTRIBUTIONS)
+
+    def _filter_lines(self, lines: list) -> list:
+        """过滤掉 AI 翻译提示行"""
+        return [(t, x, tr, wt) for t, x, tr, wt in lines if not self._is_ai_attribution(x)]
+
     def search(self, title: str, artist: str = "", album: str = "") -> Optional[SongInfo]:
         """搜索歌曲，尝试找到最佳匹配"""
+        # 空歌手搜索会返回任何歌手的同名歌曲，无法区分原唱和翻唱，直接拒绝
+        if not artist:
+            log(f"    [QQ搜索] 跳过空歌手搜索: '{title}'")
+            return None
+
         query = f"{title} {artist}".strip()
         cache_key = f"qq_search:{query}"
         cached = cache_get(cache_key)
@@ -201,6 +221,13 @@ class QQMusicProvider(BaseLyricsProvider):
                         continue
                 elif artist_lower and not song_artist:
                     continue
+                elif not artist_lower and getattr(self, '_search_artist', ''):
+                    # 空歌手变体: 验证返回结果的歌手是否与原始歌手一致
+                    clean_orig_artist = self._search_artist.lower().replace(" ", "").replace("-", "").replace("_", "")
+                    clean_song_artist = song_artist.replace("-", "").replace("_", "")
+                    if clean_song_artist != clean_orig_artist:
+                        log(f"    [QQ跳过] 空歌手变体，但歌手不匹配: {song_artist} vs {self._search_artist}")
+                        continue
 
                 if album:
                     song_album = song.get("album", {}).get("name", "").lower()
@@ -250,7 +277,7 @@ class QQMusicProvider(BaseLyricsProvider):
         """
         log(f"    [QQ音乐歌词] 开始获取歌词: songID={song_info.get('songID', 0)}, songMID={song_info.get('id', '')}")
 
-        legacy_result = self._get_lyrics_legacy(song_info)
+        legacy_result = self._filter_lines(self._get_lyrics_legacy(song_info) or [])
         if legacy_result:
             has_trans = sum(1 for _, _, tr, _ in legacy_result if tr)
             has_word = sum(1 for _, _, _, wt in legacy_result if wt)
@@ -419,6 +446,7 @@ class QQMusicProvider(BaseLyricsProvider):
 
             has_trans = sum(1 for _, _, tr, _ in result if tr)
             has_word = sum(1 for _, _, _, wt in result if wt)
+            result = self._filter_lines(result)
             log(f"    [QQ音乐歌词] GetPlayLyricInfo 成功: {len(result)} 行, 翻译 {has_trans} 行, 逐字 {has_word} 行")
             return result
 

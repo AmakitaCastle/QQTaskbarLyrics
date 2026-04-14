@@ -15,11 +15,12 @@ from src.utils.log import log
 class LyricsManager:
     """歌词管理器"""
 
-    def __init__(self, providers: List[BaseLyricsProvider], local_dir=None):
+    def __init__(self, providers: List[BaseLyricsProvider], local_dir=None, cache_enabled=True):
         self.providers = providers
         self.local_dir = Path(local_dir) if local_dir else None
         self._cache = {}
         self._loading_key = ""
+        self.cache_enabled = cache_enabled
 
     def _cache_key(self, title: str, artist: str, album: str = "") -> str:
         return f"{artist}|{title}|{album}"
@@ -62,7 +63,6 @@ class LyricsManager:
     def _fetch_online(self, title: str, artist: str, album: str = "") -> Optional[list]:
         variants = self._variants(title, artist)
         log(f"    [搜索] 生成 {len(variants)} 个搜索变体")
-        is_first_variant = True
         for t, a in variants:
             for provider in self.providers:
                 log(f"    [{provider.__class__.__name__}] 尝试: '{t}' - '{a}'" + (f" (专辑: {album})" if album else ""))
@@ -71,55 +71,51 @@ class LyricsManager:
                     continue
                 song_id = song_info.get("songID", 0)
                 cache_key = f"lyrics:{song_id}"
-                cached = cache_get(cache_key)
+                cached = cache_get(cache_key) if self.cache_enabled else None
                 if cached is not None:
                     log(f"\n[LyricsProvider] 缓存命中(songID={song_id})")
                     if cached in ("__NONE__", "__INSTRUMENTAL__"):
-                        if is_first_variant and cached == "__INSTRUMENTAL__":
-                            log("    [搜索] 首变体缓存标记为纯音乐，停止搜索")
-                            return []
                         continue
                     return cached
                 lyrics = provider.get_lyrics(song_info)
                 if lyrics:
-                    cache_set(cache_key, lyrics)
+                    if self.cache_enabled:
+                        cache_set(cache_key, lyrics)
                     has_trans = sum(1 for item in lyrics if len(item) > 2 and item[2])
                     has_word = sum(1 for item in lyrics if len(item) > 3 and item[3])
                     log(f"  >> 获取成功: {len(lyrics)} 行"
                         + (" [逐字]" if has_word > 0 else "")
                         + (" [翻译]" if has_trans > 0 else ""))
                     return lyrics
-                # 搜索到了歌曲但无歌词，可能是纯音乐
-                if is_first_variant:
-                    log("    [搜索] 首变体匹配但无歌词，标记为纯音乐")
-                    cache_set(cache_key, "__INSTRUMENTAL__")
-                    return []
-                cache_set(cache_key, "__NONE__")
-            is_first_variant = False
+                # 搜索到了歌曲但无歌词，标记该 songID 无歌词
+                if self.cache_enabled:
+                    cache_set(cache_key, "__NONE__")
         return None
 
     def load_async(self, title: str, artist: str, cb: Callable, album: str = ""):
         key = self._cache_key(title, artist, album)
-        if key in self._cache:
+        if self.cache_enabled and key in self._cache:
             cb(self._cache[key])
             return
         if self._loading_key == key:
             return
 
-        dk = disk_cache_key(title, artist, album)
-        cached = load_disk_lyrics(dk)
-        if cached is not None:
-            self._cache[key] = cached
-            log(f"[Cache] 命中磁盘缓存: {len(cached)} 行")
-            cb(cached)
-            return
+        # 磁盘缓存（仅缓存开启时）
+        if self.cache_enabled:
+            dk = disk_cache_key(title, artist, album)
+            cached = load_disk_lyrics(dk)
+            if cached is not None:
+                self._cache[key] = cached
+                log(f"[Cache] 命中磁盘缓存: {len(cached)} 行")
+                cb(cached)
+                return
 
         self._loading_key = key
 
         def w():
             log(f"\n[Lyrics] {artist} - {title}" + (f" ({album})" if album else ""))
             ly = self._try_local(title, artist) or self._fetch_online(title, artist, album) or []
-            if ly:
+            if self.cache_enabled and ly:
                 save_disk_lyrics(dk, ly)
                 log(f"[Cache] 写入磁盘缓存: {len(ly)} 行")
             self._cache[key] = ly
@@ -180,3 +176,11 @@ class LyricsManager:
         self._cache.clear()
         cache_clear()
         log("[Lyrics] 缓存已清除")
+
+    def toggle_cache(self) -> bool:
+        """切换缓存开关，返回新状态"""
+        self.cache_enabled = not self.cache_enabled
+        if not self.cache_enabled:
+            self._cache.clear()
+        log(f"[Lyrics] 缓存{'已启用' if self.cache_enabled else '已禁用'}")
+        return self.cache_enabled

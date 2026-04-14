@@ -15,6 +15,7 @@ from src.media.provider import MediaInfoProvider
 from src.lyrics.manager import LyricsManager
 from src.lyrics.providers.qq import QQMusicProvider
 from src.display.window import TaskbarLyricsWindow
+from src.display.config import get_cache_enabled
 from src.tray.manager import TrayManager
 
 
@@ -23,7 +24,8 @@ class TaskbarLyricsApp:
         self.media = MediaInfoProvider()
         self.lyrics = LyricsManager(
             providers=[QQMusicProvider()],
-            local_dir=local_dir
+            local_dir=local_dir,
+            cache_enabled=get_cache_enabled()
         )
         self.window = TaskbarLyricsWindow(
             on_play_pause=self.media.play_pause,
