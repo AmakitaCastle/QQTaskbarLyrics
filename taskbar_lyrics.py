@@ -24,7 +24,11 @@ class TaskbarLyricsApp:
             providers=[QQMusicProvider()],
             local_dir=local_dir
         )
-        self.window = TaskbarLyricsWindow()
+        self.window = TaskbarLyricsWindow(
+            on_play_pause=self.media.play_pause,
+            on_next=self.media.next_track,
+            on_prev=self.media.prev_track,
+        )
         self._last_song = ""
         self._ly = []
         self._loading = False
@@ -60,6 +64,7 @@ class TaskbarLyricsApp:
                     self.window.karaoke.update_display("♪ 暂无歌词 ♪", "", 0.0)
             else:
                 self.window.karaoke.update_display("♪ 等待播放...", "", 0.0)
+            self.window.set_play_state(self.media.is_playing())
         except Exception as e:
             log(f"[Error] {e}")
         self.window.root.after(50, self._tick)
@@ -69,7 +74,7 @@ class TaskbarLyricsApp:
         log("=" * 50)
         log("  Windows 任务栏歌词 — 模块化架构")
         log("=" * 50)
-        log("  左键拖拽 | 右键菜单 | Esc退出 | Ctrl+T穿透")
+        log("  左键拖拽 | 托盘菜单 | Esc退出 | Ctrl+T穿透")
         log("")
         self.media.start()
         self.window.root.after(500, self._tick)
