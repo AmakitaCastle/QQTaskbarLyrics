@@ -62,6 +62,7 @@ class LyricsManager:
     def _fetch_online(self, title: str, artist: str, album: str = "") -> Optional[list]:
         variants = self._variants(title, artist)
         log(f"    [搜索] 生成 {len(variants)} 个搜索变体")
+        is_first_variant = True
         for t, a in variants:
             for provider in self.providers:
                 log(f"    [{provider.__class__.__name__}] 尝试: '{t}' - '{a}'" + (f" (专辑: {album})" if album else ""))
@@ -73,9 +74,11 @@ class LyricsManager:
                 cached = cache_get(cache_key)
                 if cached is not None:
                     log(f"\n[LyricsProvider] 缓存命中(songID={song_id})")
-                    if cached == "__NONE__":
+                    if cached in ("__NONE__", "__INSTRUMENTAL__"):
+                        if is_first_variant and cached == "__INSTRUMENTAL__":
+                            log("    [搜索] 首变体缓存标记为纯音乐，停止搜索")
+                            return []
                         continue
-                    return cached
                 lyrics = provider.get_lyrics(song_info)
                 if lyrics:
                     cache_set(cache_key, lyrics)
@@ -85,7 +88,13 @@ class LyricsManager:
                         + (" [逐字]" if has_word > 0 else "")
                         + (" [翻译]" if has_trans > 0 else ""))
                     return lyrics
+                # 搜索到了歌曲但无歌词，可能是纯音乐
+                if is_first_variant:
+                    log("    [搜索] 首变体匹配但无歌词，标记为纯音乐")
+                    cache_set(cache_key, "__INSTRUMENTAL__")
+                    return []
                 cache_set(cache_key, "__NONE__")
+            is_first_variant = False
         return None
 
     def load_async(self, title: str, artist: str, cb: Callable, album: str = ""):
