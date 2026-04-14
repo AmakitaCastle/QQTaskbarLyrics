@@ -79,6 +79,7 @@ class LyricsManager:
                             log("    [搜索] 首变体缓存标记为纯音乐，停止搜索")
                             return []
                         continue
+                    return cached
                 lyrics = provider.get_lyrics(song_info)
                 if lyrics:
                     cache_set(cache_key, lyrics)
