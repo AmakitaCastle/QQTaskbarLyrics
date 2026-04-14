@@ -47,6 +47,7 @@ class TaskbarLyricsWindow:
         self._TRANSPARENT_MAGIC = "#000001"
         _bg = self._colors.get("bg", self.DEFAULT_COLORS["bg"])
         _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
+        self._actual_bg = _actual_bg
 
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         _size = self._config.get("size", {})
@@ -79,7 +80,7 @@ class TaskbarLyricsWindow:
 
         # 分隔线
         div_color = self._colors.get("divider", self.DEFAULT_COLORS["divider"])
-        self.divider = tk.Frame(self.container, bg=div_color, width=1)
+        self.divider = tk.Frame(self.container, bg=div_color, width=1, height=wh)
         self.divider.pack(side=tk.LEFT, padx=8)
 
         # 歌词 Canvas
@@ -93,10 +94,11 @@ class TaskbarLyricsWindow:
             offset_x=self.BUTTON_AREA_WIDTH + 1 + 16  # buttons + divider + padding
         )
 
-        # 拖拽
+        # 拖拽 — bind to each widget so events are not swallowed by children
         self._drag = {"x": 0, "y": 0}
-        self.container.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
-        self.container.bind("<B1-Motion>", self._drag_move)
+        for w in (self.container, self.ctrl_group, self.divider, self.canvas):
+            w.bind("<Button-1>", lambda e: self._drag.update(x=e.x, y=e.y))
+            w.bind("<B1-Motion>", self._drag_move)
 
         # 键盘快捷键：Esc 退出，Ctrl+T 切换穿透
         self.root.bind("<Escape>", lambda e: self._quit())
@@ -173,7 +175,7 @@ class TaskbarLyricsWindow:
                          fg: str, command):
         """创建一个圆形按钮（Canvas + oval + text + hover）"""
         canvas = tk.Canvas(self.ctrl_group, width=size, height=size,
-                           bg=self._colors.get("bg", self.DEFAULT_COLORS["bg"]),
+                           bg=self._actual_bg,
                            highlightthickness=0, bd=0)
         canvas.place(x=x, y=y)
 
@@ -194,7 +196,7 @@ class TaskbarLyricsWindow:
         if enter:
             canvas.delete("bg")
             canvas.create_oval(0, 0, int(canvas["width"]), int(canvas["height"]),
-                               fill="rgba(255,255,255,0.1)", outline="", tags="bg")
+                               fill="#33334a", outline="", tags="bg")
         else:
             canvas.delete("bg")
             canvas.create_oval(0, 0, int(canvas["width"]), int(canvas["height"]),
@@ -272,13 +274,16 @@ class TaskbarLyricsWindow:
 
     def _apply_colors(self):
         """应用颜色配置到窗口"""
-        self._TRANSPARENT_MAGIC = "#000001"
         _bg = self._colors.get("bg", self.DEFAULT_COLORS["bg"])
         _actual_bg = self._TRANSPARENT_MAGIC if _bg == "transparent" else _bg
+        self._actual_bg = _actual_bg
         self.root.configure(bg=_actual_bg)
         self.container.configure(bg=_actual_bg)
         self.ctrl_group.configure(bg=_actual_bg)
         self.canvas.configure(bg=_actual_bg)
+        for btn in (self._btn_prev, self._btn_play, self._btn_next):
+            if btn:
+                btn.configure(bg=_actual_bg)
         if _bg == "transparent":
             self.root.attributes("-transparentcolor", self._TRANSPARENT_MAGIC)
         else:
