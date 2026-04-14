@@ -83,6 +83,7 @@ class QQMusicProvider(BaseLyricsProvider):
         keywords = [
             "纯音乐",
             "没有填词",
+            "暂无歌词",
             "instrumental",
             "伴奏",
             "BGM",
