@@ -6,6 +6,8 @@ import asyncio
 import threading
 import time
 
+from src.utils.log import log
+
 
 class MediaInfoProvider:
     def __init__(self):
@@ -93,8 +95,8 @@ class MediaInfoProvider:
             asyncio.set_event_loop(loop)
             loop.run_until_complete(_do())
             loop.close()
-        except Exception:
-            pass
+        except Exception as e:
+            log(f"[MediaInfoProvider] control action '{action}' failed: {e}")
 
     def play_pause(self):
         self._run_control("play_pause")
