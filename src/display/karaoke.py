@@ -10,10 +10,11 @@ from tkinter import font as tkfont
 class KaraokeEngine:
     """像素级卡拉OK渲染"""
 
-    def __init__(self, canvas: tk.Canvas, colors: dict, fonts: dict):
+    def __init__(self, canvas: tk.Canvas, colors: dict, fonts: dict, offset_x: int = 0):
         self.canvas = canvas
         self.colors = colors
         self.fonts = fonts
+        self.offset_x = offset_x
 
         self._text = ""
         self._sung_id = None
@@ -81,7 +82,7 @@ class KaraokeEngine:
 
         progress = max(0.0, min(1.0, progress))
         highlight_px = self._total_px * progress
-        cw = self._canvas_w or 860
+        cw = (self._canvas_w or 860) - self.offset_x
         cum = self._cum_widths
         n = len(text)
 
@@ -111,12 +112,12 @@ class KaraokeEngine:
         mid_px = ch_w
 
         if self._total_px <= cw:
-            x0 = (cw - self._total_px) / 2
+            x0 = self.offset_x + (cw - self._total_px) / 2
         else:
-            target = cw * 0.4
+            target = self.offset_x + cw * 0.4
             x0 = target - highlight_px
-            x0 = max(cw - self._total_px - 10, x0)
-            x0 = min(10, x0)
+            x0 = max(self.offset_x + cw - self._total_px - 10, x0)
+            x0 = min(self.offset_x + 10, x0)
 
         cy = self.canvas.winfo_height() // 2
         try:
