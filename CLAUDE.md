@@ -4,164 +4,169 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains two main components:
-
-1. **Windows Taskbar Lyrics Display Tool** (Python) - Displays real-time lyrics from music players (QQ Music, NetEase Cloud Music, Spotify) on the Windows taskbar
-2. **QQ Music API** (Node.js/TypeScript) - REST API service for QQ Music data
+**TaskbarLyrics** — Windows taskbar lyrics display tool. Shows real-time lyrics above the taskbar with pixel-perfect karaoke-style highlighting. Supports any media player that registers with Windows GSMTC (QQ Music, NetEase, Spotify, etc.).
 
 ## Quick Start
 
-### Python Lyrics Tool
-
-**Install dependencies:**
 ```bash
-pip install winsdk pywin32 requests numpy
+pip install winsdk pywin32 requests pillow
+python taskbar_lyrics.py
 ```
+
+**Dependencies:**
+- `winsdk` — Windows GSMTC API bindings (media playback info)
+- `pywin32` — Windows API calls (window style, click-through, always-on-top)
+- `requests` — QQ Music API HTTP requests
+- `pillow` — System tray icon generation (pystray dependency)
+- `pystray` — System tray menu (optional, gracefully degrades if missing)
 
 **Run:**
 ```bash
-python taskbar_lyrics.py          # Main lyrics display (pixel-perfect karaoke style)
-python taskbar_lyrics_karaoke.py  # Alternative karaoke version with dual-line display
-python audio_visualizer.py        # Audio visualization module (FFT analysis)
+python taskbar_lyrics.py
 ```
 
-**Features:**
-- GSMTC API integration for media playback info
-- Multi-source lyrics: QQ Music (QRC), Kugou (KRC), NetEase, Lrclib
-- Local LRC file support
-- Karaoke-style word-by-word highlighting
-- Configurable colors and fonts via UI
-
-### QQ Music API
-
-**Location:** `qq-music-api-main/qq-music-api-main/`
-
-**Install & Run:**
+**Pack to EXE:**
 ```bash
-cd qq-music-api-main/qq-music-api-main
-npm install
-npm run dev    # Development mode (port 3200)
-npm run build  # Production build
-npm run start  # Production server
-npm run test   # Run tests
+pip install pyinstaller
+pyinstaller --onefile --noconsole --name "TaskbarLyrics" taskbar_lyrics.py
 ```
-
-**Requirements:** Node.js 20+
 
 ## Architecture
 
-### Python Lyrics Tool Structure
+Modular package-based structure under `src/`:
 
 ```
-audio_visualizer.py    # Audio FFT analysis, beat detection, color transitions
-lyrics_api.py          # Multi-platform lyrics provider (QQ/Kugou/NetEase/Lrclib)
-taskbar_lyrics.py      # Main app: pixel-level karaoke rendering
-taskbar_lyrics_karaoke.py  # Alternative: dual-line (original + translation) display
+taskbar_lyrics.py          # Entry: TaskbarLyricsApp assembles modules
+└── src/
+    ├── media/
+    │   └── provider.py    # MediaInfoProvider — polls Windows GSMTC API
+    ├── lyrics/
+    │   ├── manager.py     # LyricsManager — cache + load + current line matching
+    │   ├── parsers.py     # QRC / LRC format parsers
+    │   ├── cache.py       # Memory + disk cache (30-day TTL)
+    │   └── providers/
+    │       ├── base.py    # BaseLyricsProvider abstract base class
+    │       └── qq.py      # QQMusicProvider — QRC per-char + translation + legacy fallback
+    ├── display/
+    │   ├── window.py      # TaskbarLyricsWindow — window management, drag, config dialogs
+    │   ├── karaoke.py     # KaraokeEngine — pixel-level tri-color gradient rendering
+    │   └── config.py      # Config load/save + color/font/button UI dialogs
+    ├── tray/
+    │   └── manager.py     # TrayManager — pystray system tray with menu
+    └── utils/
+        ├── crypto.py      # QRC TripleDES decryption + QMC1 fallback
+        └── log.py         # Thread-safe console + file logging
 ```
 
-**Three-layer architecture** (both taskbar_lyrics variants):
+### Module Responsibilities
 
-| Layer | Class | Role |
-|---|---|---|
-| Media Info | `MediaInfoProvider` | Background thread polls Windows GSMTC API every 500ms for title/artist/position |
-| Lyrics | `LyricsManager` | Loads lyrics from local LRC files or online APIs, caches results |
-| Display | `TaskbarLyricsWindow` / `KaraokeLyricsWindow` | Tkinter transparent overlay with click-through, drag, config UI |
+**`media/provider.py` — MediaInfoProvider**
+- Background thread polls Windows GSMTC API every 500ms
+- Interpolates position between polls using wall-clock delta for smooth tracking
+- Provides playback controls: `play_pause()`, `next_track()`, `prev_track()`, `is_playing()`
+- Uses `winsdk.windows.media.control` with asyncio in a dedicated thread
 
-**Data flow:** GSMTC API → `MediaInfoProvider` (polls) → `get_info()` → `_tick()` (50ms/100ms interval) → `get_current_line()` → Canvas repaint
+**`lyrics/manager.py` — LyricsManager**
+- Lyric source priority: local LRC files → QQ Music online
+- Generates title/artist variants (stripped parentheses, parenthetical content) for better match rates
+- Async loading via background thread with callback to main thread
+- Memory cache + disk cache (30-day TTL, stored in `~/.taskbar_lyrics_cache/`)
+- `get_current_line()` returns `(original_text, translation, progress)` — progress is 0.0-1.0
 
-**Key Components:**
+**`lyrics/providers/qq.py` — QQMusicProvider (sole lyrics data source)**
+- Primary: `GetPlayLyricInfo` — QRC per-character lyrics + translation (requires session)
+- Fallback: legacy `c.y.qq.com/lyric/...` endpoint (LRC format)
+- Session caching: 30-minute TTL for QQ Music session credentials
+- Search scoring: exact match (+100), prefix (+60), substring (+30), artist (+50), album (+80)
+- Filters AI translation attributions and instrumental markers
+- Only accepts non-Live/Ver tracks by default; falls back to all if none available
 
-- `MediaInfoProvider`: Polls Windows GSMTC API; interpolates position between polls using wall-clock delta for smooth tracking
-- `LyricsProvider` (in `lyrics_api.py`): Standalone orchestrator for 4 data sources — `NeteaseAPI`, `QQMusicAPI`, `LrclibAPI`, `KugouAPI`
-- `LyricsManager`: Wraps `LyricsProvider`, adds local LRC loading and caching
-- `TaskbarLyricsWindow`: Tkinter overlay with drag support, click-through, always-on-top
+**`lyrics/parsers.py` — Format Parsers**
+- QRC: XML-embedded per-character timing `(char_offset_ms, char_duration_ms, char)`
+- LRC: Standard `[mm:ss.ms]` format with 2/3-digit millisecond handling
 
-**Lyrics Source Priority:** NetEase → Lrclib → QQ Music → Kugou
+**`lyrics/cache.py` — Dual-layer Cache**
+- Memory: `cache.json` with 30-day TTL
+- Disk: Individual `{md5key}.json` files per song, atomic write (tmp + replace)
+- Thread-safe with `threading.Lock`
 
-**Rendering modes:**
-- `taskbar_lyrics.py`: Pixel-level karaoke with 3 Canvas text items (sung/mid/unsung), bisect-based pixel positioning, boundary color interpolation (`_lerp_color`), 20fps (50ms tick)
-- `taskbar_lyrics_karaoke.py`: Dual-line display (original + translation), supports KRC (per-character clip rectangles) and LRC (single clip rectangle), 10fps (100ms tick)
+**`display/window.py` — TaskbarLyricsWindow**
+- Tkinter overlay: `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` hides from taskbar, `WS_EX_TRANSPARENT` for click-through
+- Config dialogs: colors (bg/sung/unsung + transparent mode), fonts (family/size/bold), button size, window size
+- Playback control buttons: prev / play-pause / next (Canvas-based circular buttons)
+- Position persistence: auto-saves on `<Configure>` with 500ms debounce
+- Shortcuts: Esc = quit, Ctrl+T = toggle click-through
 
-**Window flags:** `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` hides from taskbar; `WS_EX_TRANSPARENT` enables click-through; periodic `SetWindowPos` keeps always-on-top
+**`display/karaoke.py` — KaraokeEngine**
+- Pixel-level tri-color rendering: sung (highlight) / boundary (color-interpolated) / unsung (dim)
+- 3 Canvas text items, `bisect`-based pixel positioning
+- Auto-scrolling for text wider than window (keeps highlight at 40% of viewport)
+- Boundary color interpolation via `_lerp_color()` (hex color linear interpolation)
+- 20fps (50ms tick from `_tick()`)
 
-### Audio Visualizer
+**`display/config.py` — Configuration**
+- Config file: `~/.taskbar_lyrics_config.json`
+- Color/font/button/window-size dialogs with live preview swatches
+- `cache_enabled` flag persisted across sessions
 
-`AudioVisualizer` captures system audio via Windows Core Audio API (loopback mode, `pycaw`), falls back to simulated audio:
-- FFT analysis split into bass (20-250Hz), mid (250-4000Hz), treble (4000-20000Hz)
-- Beat detection via energy threshold
-- Maps frequency bands to HSL color (bass=red/orange, mid=green/yellow, treble=blue/purple)
-- 6 preset palettes: rainbow, ocean, fire, neon, pastel, gold
-- `VisualizerUI` provides Tkinter config window with live preview
+**`tray/manager.py` — TrayManager**
+- pystray-based system tray with golden-note icon
+- Menu: show/hide, click-through toggle, window size, colors, fonts, buttons, cache control, quit
+- Cross-thread safety: `root.after(0, fn)` to invoke tkinter from tray thread
 
-### QQ Music API Structure
+**`utils/crypto.py` — Decryption**
+- TripleDES implementation from scratch (no external crypto dependency)
+- QRC cloud decryption: TripleDES + zlib decompress
+- QMC1 fallback: XOR with `_QMC1_PRIVKEY` table
+- Key caching for performance
+
+**`utils/log.py` — Logging**
+- Thread-safe dual output: console + `taskbar_lyrics.log`
+- UTF-8 encoding, timestamped `[HH:MM:SS.mmm]` format
+
+### Data Flow
 
 ```
-qq-music-api-main/qq-music-api-main/
-├── src/               # TypeScript source code
-├── routes/            # API route definitions
-├── utils/             # Helper utilities
-├── docs/              # VitePress documentation
-├── tests/             # Jest test suite
-├── config/            # Service configuration
-│   ├── service-config.ts  # Fallback mode, global cookie settings
-│   └── user-info.ts       # QQ cookie, uin credentials
-└── vercel.json        # Vercel deployment config
+GSMTC API → MediaInfoProvider (500ms poll) → get_info() (wall-clock interpolated)
+    → _tick() (50ms, 20fps) → get_current_line() → KaraokeEngine.update_display()
+    → Canvas repaint (sung/mid/unsung text items)
+
+Song change → LyricsManager.load_async()
+    → 1. Memory cache check
+    → 2. Disk cache check
+    → 3. Local LRC file search
+    → 4. QQ Music search + fetch (GetPlayLyricInfo → legacy fallback)
+    → Disk cache write → callback to main thread
 ```
 
-**Entry point:** `app.ts` → imports `koaApp.ts` → starts Koa server on port 3200
+### Lyrics Data Structure
 
-**Middleware pipeline** (in order): koa-bodyparser → fallbackMiddleware → cookieMiddleware → koa-static → request logging → CORS → response time → router
+Each lyric line is a 4-tuple: `(time_ms, text, translation, word_timings)`
 
-**Main API Categories:**
-- **Music**: Playback URLs, lyrics, MV info, album images
-- **Singer**: Profile, hot songs, similar artists, albums
-- **Playlist**: Categories, list, details
-- **User**: Login (QR code), avatar, user playlists
-- **Rank**: Chart lists and details
-- **Other**: Comments, digital albums, downloads
+- `time_ms`: start time in milliseconds
+- `text`: original lyric text
+- `translation`: translated text (empty string if none)
+- `word_timings`: list of `(char_offset_ms, char_duration_ms, char)` for per-character timing (QRC only)
 
-**Key Files:**
-- `app.js` / `app.ts`: Entry point, Koa server setup
-- `tsconfig.json`: TypeScript configuration
-- `vercel.json`: Deployment config
+### Window Flags
 
-## Commands Reference
+- `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` — hides from taskbar, doesn't steal focus
+- `WS_EX_TRANSPARENT` — click-through (toggled via Ctrl+T)
+- Periodic `SetWindowPos` with `HWND_TOPMOST` — keeps always-on-top
+- 500ms `_ensure_topmost()` cycle + FocusOut recovery prevents window disappearing
 
-| Task | Command |
-|------|---------|
-| Run lyrics tool | `python taskbar_lyrics.py` |
-| Run audio visualizer | `python audio_visualizer.py` |
-| Install Python deps | `pip install winsdk pywin32 requests numpy` |
-| Start QQ Music API dev | `cd qq-music-api-main/qq-music-api-main && npm run dev` |
-| Build QQ Music API | `npm run build` |
-| Test QQ Music API | `npm run test` |
-| Run docs | `npm run docs:dev` |
+## System Requirements
 
-## Component Relationship
+- **Windows 10 1809+** — GSMTC API requirement
+- **Python 3.9+** — for `winsdk` asyncio support
+- Media keys test: press play/pause on keyboard; if a system popup controls the player, GSMTC is supported
 
-The Python lyrics tool and the QQ Music API are **independent** projects. `lyrics_api.py` calls QQ Music's **direct web endpoints** (e.g., `c.y.qq.com/lyric/...`) rather than the local QQ Music API server. The QQ Music API exists as a separate standalone service.
+## Testing
 
-## Technical Notes
+```bash
+python test_honesty.py    # Module-level unit tests
+```
 
-### GSMTC API
-- Requires Windows 10 1809+ for Global System Media Transport Controls
-- Supported players: QQ Music, NetEase, Spotify, etc. that register with Windows media session
-- Keyboard media keys (play/pause) test: if they control the player, GSMTC is supported
+## Configuration
 
-### Lyrics Formats
-- **QRC** (QQ Music): Encrypted逐字 lyrics with character-level timing
-- **KRC** (Kugou): XOR encryption + zlib decompression, word-level timestamps
-- **LRC**: Standard format with line-level timing + optional translation
-
-### Windows Window Style
-- Taskbar lyrics uses `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` for taskbar hiding
-- Click-through mode: `WS_EX_TRANSPARENT` flag via SetWindowLong
-
-### Configuration Files
-- Python tool saves user preferences to `~/.taskbar_lyrics_config.json` or `~/.taskbar_lyrics_karaoke_config.json`
-- QQ Music API credentials in `qq-music-api-main/qq-music-api-main/config/user-info.ts`
-
-### Rendering Performance
-- `taskbar_lyrics.py`: 20fps (50ms tick interval)
-- `taskbar_lyrics_karaoke.py`: 10fps (100ms tick interval)
-- Audio visualizer: requires `pycaw` for real audio capture, falls back to simulated mode
+User preferences are saved to `~/.taskbar_lyrics_config.json`. Local LRC files can be enabled by passing `local_dir` to `TaskbarLyricsApp()` in `taskbar_lyrics.py`.

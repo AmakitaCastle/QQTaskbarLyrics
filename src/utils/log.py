@@ -8,9 +8,11 @@ import os
 import threading
 import datetime
 
-# 设置 stdout 编码为 utf-8
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+# 设置 stdout 编码为 utf-8（noconsole 模式下 stdout 为 None）
+if sys.stdout is not None:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr is not None:
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 _log_lock = threading.Lock()
 _log_file = None
@@ -35,7 +37,8 @@ def log(msg):
     ts = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
     line = f"[{ts}] {msg}"
     try:
-        print(line, flush=True)
+        if sys.stdout is not None:
+            print(line, flush=True)
     except:
         pass
     with _log_lock:

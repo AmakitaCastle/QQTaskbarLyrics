@@ -6,9 +6,11 @@ Windows 任务栏歌词 — 模块化架构
 import sys
 import io
 
-# 设置 stdout 编码为 utf-8
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+# 设置 stdout 编码为 utf-8（noconsole 模式下 stdout 为 None）
+if sys.stdout is not None:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr is not None:
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from src.utils.log import log, _init_log
 from src.media.provider import MediaInfoProvider
