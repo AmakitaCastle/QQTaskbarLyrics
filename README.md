@@ -6,14 +6,7 @@
 ![Windows 10+](https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 
-## 截图
-
-### 卡拉 OK 逐字高亮
-![Karaoke Lyrics](QQ20260413-222628.png)
-
-### 双行显示模式
-![Dual-line Lyrics](QQ20260413-222949.png)
-
+ 
 ## 项目背景
 
 macOS 版 QQ 音乐有一个很实用的功能：在菜单栏/触控栏显示实时歌词。
